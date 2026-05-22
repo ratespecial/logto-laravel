@@ -95,11 +95,14 @@ class LogtoApiResourceGuard implements Guard
      */
     protected function resolveUser(array $claims): Authenticatable
     {
+        $subjectColumn = config('logto.subject-column');
+
         /** @var Model $model */
         $model = new $this->userModel();
+
         /** @var Authenticatable&Model&OAuthScopable $user */
-        $user = $model->newQuery()->updateOrCreate(
-            [config('logto.subject-column') => $claims['sub']],
+        $user   = $model->newQuery()->updateOrCreate(
+            [$subjectColumn => $claims['sub']],
             $this->mapClaimsToAttributes($claims),
         );
 
@@ -130,7 +133,7 @@ class LogtoApiResourceGuard implements Guard
 
     protected function reject(string $reason): null
     {
-        Log::debug("Logto JWT rejected: {$reason}");
+        Log::debug("Logto JWT rejected: $reason");
 
         return null;
     }
