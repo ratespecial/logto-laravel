@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "binary_operator_spaces": {
+      "default": "align_single_space"
+    },
+    "new_with_parentheses": {
+      "named_class": true,
+      "anonymous_class": false
+    },
+    "concat_space": {
+      "spacing": "one"
+    },
+    "increment_style": {
+      "style": "pre"
+    },
+    "php_unit_method_casing": {
+      "case": "camel_case"
+    }
+  }
+}

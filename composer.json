@@ -1,0 +1,47 @@
+{
+  "name": "ratespecial/logto-laravel",
+  "description": "Logto.io support for Laravel",
+  "type": "library",
+  "homepage": "https://github.com/ratespecial/logto-laravel",
+  "license": "MIT",
+  "minimum-stability": "stable",
+  "require": {
+    "php": "^8.3",
+    "firebase/php-jwt": "^7.0"
+  },
+  "require-dev": {
+    "illuminate/console": "^11",
+    "illuminate/support": "^11",
+    "laravel/pint": "^1.0",
+    "orchestra/testbench": "^9",
+    "phpstan/phpstan": "^2.1.54",
+    "phpunit/phpunit": "^11"
+  },
+  "autoload": {
+    "psr-4": {
+      "Ratespecial\\Logto\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\Ratespecial\\Logto\\": "tests"
+    }
+  },
+  "scripts": {
+    "qa": ["@fix-style", "@phpstan", "@test"],
+    "test": "phpunit",
+    "check-style": "pint --test",
+    "fix-style": "pint",
+    "phpstan": "phpstan analyse --memory-limit=512M"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Ratespecial\\Logto\\LogtoServiceProvider"
+      ]
+    }
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
