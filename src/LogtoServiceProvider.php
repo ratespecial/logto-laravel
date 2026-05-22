@@ -94,7 +94,7 @@ class LogtoServiceProvider extends ServiceProvider
             }
 
             return new OidcDiscoveryService(
-                issuer: $config['endpoint'],
+                issuer: $config['endpoint'] . '/oidc',
                 cacheTtl: $config['cache-ttl'],
             );
         });
