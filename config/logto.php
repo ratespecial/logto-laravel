@@ -31,4 +31,20 @@ return [
         'email' => 'email',
         'name'  => 'name',
     ],
+
+    'mcp' => [
+        'routes' => env('LOGTO_MCP_ROUTES', false),
+
+        /*
+         * Scopes advertised by the OAuth Protected Resource metadata endpoint (RFC 9728).
+         * Space-delimited string of scope names.
+         */
+        'scopes-supported' => env('LOGTO_MCP_SCOPES', 'mcp:use'),
+
+        /*
+         * Middleware applied to the OAuth Protected Resource metadata route.
+         * Comma-delimited string of middleware names/aliases.
+         */
+        'protected-resource-middleware' => env('LOGTO_MCP_PROTECTED_RESOURCE_MIDDLEWARE', ''),
+    ],
 ];

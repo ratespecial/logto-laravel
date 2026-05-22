@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ratespecial\Logto\Contracts;
 
+use Ratespecial\Logto\HasOAuthScopes;
+
 /**
  * Contract for models that carry OAuth scopes granted by the access token.
  *
- * @see \Ratespecial\Logto\HasOAuthScopes
+ * @see HasOAuthScopes
  */
 interface OAuthScopable
 {

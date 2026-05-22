@@ -22,6 +22,8 @@ class LogtoServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->routes();
+
         // Configure Guard driver.  Must be configured to a guard in config/auth.php `guards`.
         // For use with `auth` middleware.
         Auth::extend('logto-api-resource', function ($app, $_name, array $config) {
@@ -93,5 +95,12 @@ class LogtoServiceProvider extends ServiceProvider
                 cacheTtl: $config['cache-ttl'],
             );
         });
+    }
+
+    protected function routes(): void
+    {
+        if ($this->app['config']->get('logto.mcp.routes')) {
+            $this->loadRoutesFrom(__DIR__ . '/../routes/mcp-routes.php');
+        }
     }
 }
