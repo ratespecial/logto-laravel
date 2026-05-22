@@ -7,6 +7,28 @@ Logto.io (OAuth/OIDC) support for Laravel. This package contributes two independ
 
 **Requirements:** PHP `^8.3`, Laravel 11, a Logto tenant.
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [High-level Architecture](#high-level-architecture)
+- [JIT User Provisioning](#jit-user-provisioning)
+- [Feature 1 — The `logto-api-resource` Guard](#feature-1--the-logto-api-resource-guard)
+  - [Request flow](#request-flow)
+  - [Migrations](#migrations)
+  - [User model](#user-model)
+  - [Guard registration](#guard-registration)
+  - [Protecting routes](#protecting-routes)
+  - [Reacting to new users](#reacting-to-new-users)
+- [Feature 2 — MCP Protected Resource Controller](#feature-2--mcp-protected-resource-controller)
+  - [Discovery handshake](#discovery-handshake)
+  - [Logto configuration](#logto-configuration)
+  - [Enable the discovery routes](#enable-the-discovery-routes)
+  - [Protecting an `Mcp::web` server with the Logto guard](#protecting-an-mcpweb-server-with-the-logto-guard)
+  - [Adding the MCP server to Claude Code](#adding-the-mcp-server-to-claude-code)
+- [Development](#development)
+- [License](#license)
+
 ## Installation
 
 ```bash
@@ -77,6 +99,16 @@ flowchart LR
     Routes -- .well-known/oauth-protected-resource --> MCPCtrl
     MCPCtrl --> Discovery
 ```
+
+---
+
+## JIT User Provisioning
+
+This package uses **just-in-time (JIT) user provisioning**: there is no separate registration flow. The first time a given Logto identity (`sub` claim) presents a valid access token to your API, the guard calls `updateOrCreate` on your user model and inserts a new row keyed by `logto.subject-column`. On every subsequent request, the same row is found and updated with any mapped claim attributes (email, name, etc.).
+
+The subject must be assigned at least one permission to the API resource in Logto.  If they don't, the guard will reject them and the user will not be provisioned. 
+
+> ⚠️ **Heads up:** any token Logto has signed for your configured `LOGTO_API_RESOURCE` audience will result in a user record being created automatically the first time it's seen. There is no manual approval step. If you need to restrict who can sign in, enforce that **in Logto** (sign-in experience, roles, organization membership, or by minting tokens with specific scopes) — not in this package. You can also listen for `UserProvisionedEvent` to audit or post-process new accounts.
 
 ---
 
@@ -214,6 +246,8 @@ It exposes RFC 9728 metadata at:
 
 `laravel/mcp`'s `AddWwwAuthenticateHeader` middleware builds the `WWW-Authenticate` URL from the nested route name, so simply registering these routes wires the discovery handshake end-to-end. **These endpoints must not sit behind authentication middleware** — they're public discovery documents.
 
+> **Note on the OAuth model.** This integration does **not** use [Dynamic Client Registration](https://datatracker.ietf.org/doc/html/rfc7591) (DCR) or [Client ID Metadata](https://workos.com/blog/client-id-metadata-documents-cimd-oauth-client-registration-mcp) (CIMD). The MCP client uses a **pre-registered OAuth client ID** that you create up-front in Logto as a *Third-party app*. The client and its allowed redirect URIs must exist in Logto before the user adds the MCP server to their client.
+
 ### Discovery handshake
 
 ```mermaid
@@ -232,6 +266,16 @@ sequenceDiagram
     App->>App: auth:logto guard validates token
     App-->>MCPClient: 200 MCP response
 ```
+
+### Logto configuration
+
+Before any MCP client can connect, set up the OAuth client in Logto:
+
+1. In the Logto admin console, create a new **Third-party app** for each MCP client you want to support (e.g. one for Claude Code, one for Cursor, etc.).
+2. Set the application type to **Single Page App**.
+3. The generated **App ID** is what the MCP client will use as its OAuth Client ID.
+4. Under the third-party app's **Redirect URIs**, pre-register every loopback callback URL the client will use, including the exact port — e.g. `http://localhost:55910/callback`. Logto will reject the OAuth flow if the callback URI doesn't match an entry here, so the port has to be picked up-front and reused when the MCP server is added on the client side.
+5. Grant the third-party app permission to request your API resource (the value of `LOGTO_API_RESOURCE`) and any scopes from `LOGTO_MCP_SCOPES`.
 
 ### Enable the discovery routes
 
@@ -257,6 +301,20 @@ Mcp::web('/mcp', MyServer::class)
 - `auth:logto` runs the bearer token through `LogtoApiResourceGuard`.
 - `can:mcp:use` enforces a Logto OAuth scope via the same `Gate::before` hook the guard installs — `mcp:use` here is whatever scope you defined in Logto and advertised in `LOGTO_MCP_SCOPES`.
 - On a missing or invalid token, `laravel/mcp`'s `AddWwwAuthenticateHeader` injects the `WWW-Authenticate` header pointing at this library's nested discovery route. No extra wiring required.
+
+### Adding the MCP server to Claude Code
+
+Because the OAuth client and its callback URI are pre-registered in Logto, the user has to pass both the **Client ID** (the Logto third-party App ID) and the **callback port** (matching one of the redirect URIs registered in Logto) when they add the MCP server:
+
+```bash
+claude mcp add \
+    --transport http \
+    --client-id your-3rdparty-app-id \
+    --callback-port 55910 \
+    yourservice https://domain.com/mcp
+```
+
+The discovery handshake then kicks in automatically — Claude Code hits `/mcp`, gets a `401` with the `WWW-Authenticate` header, fetches `/.well-known/oauth-protected-resource/mcp`, and runs the OAuth flow against the Logto issuer returned in the metadata using the supplied client ID and callback port.
 
 ---
 

@@ -1,6 +1,7 @@
 {
   "name": "ratespecial/logto-laravel",
-  "description": "Logto.io support for Laravel",
+  "description": "Logto.io OIDC support for Laravel",
+  "keywords": ["logto", "oidc", "oauth", "mcp", "laravel"],
   "type": "library",
   "homepage": "https://github.com/ratespecial/logto-laravel",
   "license": "MIT",
