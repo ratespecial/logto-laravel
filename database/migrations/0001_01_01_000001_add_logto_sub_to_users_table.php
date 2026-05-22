@@ -13,7 +13,7 @@ return new class extends Migration
         $column = config('logto.subject-column');
 
         Schema::table('users', function (Blueprint $table) use ($column) {
-            $table->string($column)->nullable()->unique()->after('email');
+            $table->string($column)->nullable()->unique();
         });
     }
 
