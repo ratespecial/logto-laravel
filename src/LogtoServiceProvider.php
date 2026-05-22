@@ -71,7 +71,7 @@ class LogtoServiceProvider extends ServiceProvider
     protected function registerTokenValidator(): void
     {
         $this->app->bind(LogtoTokenValidator::class, function ($app) {
-            $config = $app['config']->get('services.logto');
+            $config = $app['config']->get('logto');
 
             if (empty($config['api-resource'])) {
                 throw new RuntimeException('Logto audience is not configured');
@@ -87,7 +87,7 @@ class LogtoServiceProvider extends ServiceProvider
     protected function registerOidcDiscoveryService(): void
     {
         $this->app->bind(OidcDiscoveryService::class, function ($app) {
-            $config = $app['config']->get('services.logto');
+            $config = $app['config']->get('logto');
 
             if (empty($config['endpoint'])) {
                 throw new RuntimeException('Logto endpoint is not configured');
