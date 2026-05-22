@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Ratespecial\Logto\Contracts\OAuthScopable;
 use Ratespecial\Logto\Events\UserProvisionedEvent;
+use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
 use Throwable;
 
@@ -64,6 +65,8 @@ class LogtoApiResourceGuard implements Guard
 
     /**
      * @return array<string, mixed>|null
+     *
+     * @throws OidcDiscoveryException
      */
     protected function resolveClaims(): ?array
     {
@@ -74,6 +77,9 @@ class LogtoApiResourceGuard implements Guard
 
         try {
             $claims = $this->validator->validate($token);
+        } catch (OidcDiscoveryException $ex) {
+            // Something is likely wrong with the configuration.  Be loud about this so it's not confused with a bad login.
+            throw $ex;
         } catch (Throwable $ex) {
             return $this->reject("invalid token: {$ex->getMessage()}");
         }

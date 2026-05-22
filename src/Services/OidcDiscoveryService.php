@@ -18,6 +18,8 @@ class OidcDiscoveryService
 
     /**
      * Fetch (and cache) Logto's OIDC discovery document.
+     *
+     * @throws OidcDiscoveryException
      */
     public function get(): OidcDiscoveryDoc
     {
@@ -41,6 +43,8 @@ class OidcDiscoveryService
      * @see https://datatracker.ietf.org/doc/html/rfc7517
      *
      * @return array<string, mixed>
+     *
+     * @throws OidcDiscoveryException
      */
     public function getJwks(): array
     {
