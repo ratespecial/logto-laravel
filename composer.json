@@ -6,6 +6,12 @@
   "homepage": "https://github.com/ratespecial/logto-laravel",
   "license": "MIT",
   "minimum-stability": "stable",
+  "authors": [
+    {
+      "name": "Karl Pierce",
+      "email": "kpierce@ratespecial.com"
+    }
+  ],
   "require": {
     "php": "^8.3",
     "firebase/php-jwt": "^7.0"
