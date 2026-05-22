@@ -7,6 +7,7 @@ namespace Ratespecial\Logto\Services;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
 use Illuminate\Support\Arr;
+use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Exceptions\TokenValidationException;
 
 class LogtoTokenValidator
@@ -22,6 +23,7 @@ class LogtoTokenValidator
      * @return array<string, mixed>
      *
      * @throws TokenValidationException
+     * @throws OidcDiscoveryException
      */
     public function validate(string $token): array
     {
