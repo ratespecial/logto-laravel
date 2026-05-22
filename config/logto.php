@@ -12,13 +12,22 @@ return [
     /*
      * API resource identifier.  Must match exactly
      * This will be the audience claim in the JWT
+     *
+     * Defaults to the base URL.  MCP clients such as Claude expect the resource to match the domain of the MCP server.
      */
-    'api-resource' => env('LOGTO_API_RESOURCE', ''),
+    'api-resource' => env('LOGTO_API_RESOURCE', '') ?? url('/'),
 
     /*
      * TTL in second for cached OIDC discovery document and JWKS
      */
     'cache-ttl' => (int) env('LOGTO_CACHE_TTL', 600),
+
+    /*
+     * Column on the user model that stores the Logto JWT `sub` claim.
+     * Used by LogtoApiResourceGuard for updateOrCreate(), and by the
+     * published migrations.
+     */
+    'subject-column' => env('LOGTO_SUBJECT_COLUMN', 'logto_sub'),
 
     /*
      * Mapping of JWT claim name => user model attribute name.

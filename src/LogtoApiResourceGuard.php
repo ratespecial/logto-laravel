@@ -99,7 +99,7 @@ class LogtoApiResourceGuard implements Guard
         $model = new $this->userModel();
         /** @var Authenticatable&Model&OAuthScopable $user */
         $user = $model->newQuery()->updateOrCreate(
-            ['logto_sub' => $claims['sub']],
+            [config('logto.subject-column') => $claims['sub']],
             $this->mapClaimsToAttributes($claims),
         );
 

@@ -23,8 +23,13 @@ class OauthProtectedResourceController extends Controller
         $supportedScopes = explode(' ', config('logto.scopes-supported'));
 
         return response()->json([
+            // MCP clients such as Claude expect this to match the URL of the MCP server they're requesting from.
             'resource'              => config('logto.api-resource'),
+
+            // Should point to logto.io tenant
             'authorization_servers' => [$issuer],
+
+            // Scopes listed here should be set as permissions on the third party application
             'scopes_supported'      => $supportedScopes,
         ]);
     }

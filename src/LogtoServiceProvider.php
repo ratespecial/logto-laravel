@@ -15,6 +15,8 @@ class LogtoServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->mergeConfigFrom(__DIR__ . '/../config/logto.php', 'logto');
+
         $this->registerGuardConfig();
         $this->registerTokenValidator();
         $this->registerOidcDiscoveryService();
@@ -23,6 +25,7 @@ class LogtoServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->routes();
+        $this->migrations();
 
         // Configure Guard driver.  Must be configured to a guard in config/auth.php `guards`.
         // For use with `auth` middleware.
@@ -102,5 +105,16 @@ class LogtoServiceProvider extends ServiceProvider
         if ($this->app['config']->get('logto.mcp.routes')) {
             $this->loadRoutesFrom(__DIR__ . '/../routes/mcp-routes.php');
         }
+    }
+
+    protected function migrations(): void
+    {
+        $this->publishesMigrations([
+            __DIR__ . '/../database/migrations/0001_01_01_000000_create_users_table.php' => database_path('migrations/0001_01_01_000000_create_users_table.php'),
+        ], 'logto-migrations-users');
+
+        $this->publishesMigrations([
+            __DIR__ . '/../database/migrations/0001_01_01_000001_add_logto_sub_to_users_table.php' => database_path('migrations/0001_01_01_000001_add_logto_sub_to_users_table.php'),
+        ], 'logto-migrations-logto-sub');
     }
 }
