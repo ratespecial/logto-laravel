@@ -95,7 +95,7 @@ flowchart LR
     Routes -- auth:logto --> Guard
     Guard --> Validator --> Discovery
     Discovery -- JWKS + OIDC config --> Logto
-    Guard -- updateOrCreate / setOAuthScopes --> User
+    Guard -- firstOrNew + forceFill / setOAuthScopes --> User
     Routes -- .well-known/oauth-protected-resource --> MCPCtrl
     MCPCtrl --> Discovery
 ```
@@ -104,7 +104,7 @@ flowchart LR
 
 ## JIT User Provisioning
 
-This package uses **just-in-time (JIT) user provisioning**: there is no separate registration flow. The first time a given Logto identity (`sub` claim) presents a valid access token to your API, the guard calls `updateOrCreate` on your user model and inserts a new row keyed by `logto.subject-column`. On every subsequent request, the same row is found and updated with any mapped claim attributes (email, name, etc.).
+This package uses **just-in-time (JIT) user provisioning**: there is no separate registration flow. The first time a given Logto identity (`sub` claim) presents a valid access token to your API, the guard resolves the user with `firstOrNew` keyed by `logto.subject-column` and inserts a new row. On every subsequent request, the same row is found and updated with any mapped claim attributes (email, name, etc.). Mapped attributes are written with `forceFill`, so they're persisted even if your user model doesn't list them in `$fillable` — the values come from a validated JWT, not request input.
 
 The subject must be assigned at least one permission to the API resource in Logto.  If they don't, the guard will reject them and the user will not be provisioned. 
 
@@ -118,7 +118,7 @@ The guard:
 
 - Reads the bearer token from the incoming request.
 - Validates signature, issuer (`iss`), and audience (`aud`) against Logto's OIDC discovery document and JWKS — both cached for `LOGTO_CACHE_TTL` seconds.
-- JIT-provisions a user via `updateOrCreate`, keyed on `logto.subject-column`. Attributes are mapped from JWT claims using `logto.model-attributes`.
+- JIT-provisions a user via `firstOrNew` keyed on `logto.subject-column`, then `forceFill`s and saves it. Attributes are mapped from JWT claims using `logto.model-attributes` and persist regardless of the model's `$fillable`.
 - Attaches the `scope` claim to the in-memory user. A global `Gate::before` hook then makes `can:<scope>` middleware and `$user->can('<scope>')` work transparently.
 - Dispatches `Ratespecial\Logto\Events\UserProvisionedEvent` the first time a given `sub` is seen.
 
@@ -144,7 +144,7 @@ sequenceDiagram
     end
     Discovery-->>Validator: keys + issuer
     Validator-->>Guard: claims (sub, scope, ...)
-    Guard->>DB: updateOrCreate(logto_sub = claims.sub)
+    Guard->>DB: firstOrNew(logto_sub = claims.sub) + forceFill
     Guard-->>App: authenticated User with scopes
     App-->>Client: 200 (or 401 if invalid)
 ```

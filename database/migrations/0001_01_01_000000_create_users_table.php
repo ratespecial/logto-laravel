@@ -11,10 +11,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('users', function (Blueprint $table) {
+            $subjectColumn = config('logto.subject-column');
+
             $table->id();
             $table->string('name')->default('');
             $table->string('email')->nullable()->unique();
-            $table->string(config('logto.subject-column'))->nullable()->unique();
+            $table->string($subjectColumn)->nullable()->unique();
             $table->timestamps();
         });
     }

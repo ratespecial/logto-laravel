@@ -107,10 +107,16 @@ class LogtoApiResourceGuard implements Guard
         $model = new $this->userModel();
 
         /** @var Authenticatable&Model&OAuthScopable $user */
-        $user   = $model->newQuery()->updateOrCreate(
-            [$subjectColumn => $claims['sub']],
-            $this->mapClaimsToAttributes($claims),
-        );
+        $user = $model->newQuery()
+            ->firstOrNew([$subjectColumn => $claims['sub']]);
+
+        // forceFill so claim-mapped attributes are written even when the host
+        // app's user model doesn't mark them fillable. The values come from a
+        // validated JWT, not request input, so mass-assignment guarding is moot.
+        $attributes                 = $this->mapClaimsToAttributes($claims);
+        $attributes[$subjectColumn] = $claims['sub'];
+
+        $user->forceFill($attributes)->save();
 
         $user->setOAuthScopes((string) $claims['scope']);
 
