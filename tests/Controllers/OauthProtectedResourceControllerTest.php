@@ -28,7 +28,6 @@ class OauthProtectedResourceControllerTest extends TestCase
     {
         $app['config']->set('logto', [
             'api-resource'      => 'https://api.example.com',
-            'scopes-supported'  => 'mcp:use',
             'mcp'               => [
                 'routes'                        => true,
                 'scopes-supported'              => 'mcp:use',
@@ -78,7 +77,7 @@ class OauthProtectedResourceControllerTest extends TestCase
 
     public function testParsesSpaceDelimitedScopesIntoArray(): void
     {
-        config(['logto.scopes-supported' => 'mcp:use read:foo write:bar']);
+        config(['logto.mcp.scopes-supported' => 'mcp:use read:foo write:bar']);
 
         $response = $this->getJson('/.well-known/oauth-protected-resource');
 

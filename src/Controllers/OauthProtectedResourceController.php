@@ -20,7 +20,7 @@ class OauthProtectedResourceController extends Controller
     public function __invoke(?string $path = ''): JsonResponse
     {
         $issuer          = $this->oidcDiscoveryService->get()->issuer;
-        $supportedScopes = explode(' ', config('logto.scopes-supported'));
+        $supportedScopes = explode(' ', config('logto.mcp.scopes-supported'));
 
         return response()->json([
             // MCP clients such as Claude expect this to match the URL of the MCP server they're requesting from.
