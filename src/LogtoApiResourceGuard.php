@@ -110,6 +110,10 @@ class LogtoApiResourceGuard implements Guard
         $user = $model->newQuery()
             ->firstOrNew([$subjectColumn => $claims['sub']]);
 
+        if (! $user->exists && config('logto.link-unclaimed-by-email')) {
+            $user = $this->findUnclaimedUser($model, $subjectColumn, $claims) ?? $user;
+        }
+
         // forceFill so claim-mapped attributes are written even when the host
         // app's user model doesn't mark them fillable. The values come from a
         // validated JWT, not request input, so mass-assignment guarding is moot.
@@ -122,6 +126,33 @@ class LogtoApiResourceGuard implements Guard
 
         if ($user->wasRecentlyCreated) {
             UserProvisionedEvent::dispatch($user);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Find an existing user whose subject was cleared (e.g. after a Logto tenant migration)
+     * and whose email matches the token's email claim, so it can be claimed by the new subject.
+     *
+     * @param  array<string, mixed>  $claims
+     * @return (Authenticatable&Model&OAuthScopable)|null
+     */
+    protected function findUnclaimedUser(Model $model, string $subjectColumn, array $claims): ?Model
+    {
+        $emailColumn = $this->modelAttributes['email'] ?? null;
+        if ($emailColumn === null || empty($claims['email'])) {
+            return null;
+        }
+
+        /** @var (Authenticatable&Model&OAuthScopable)|null $user */
+        $user = $model->newQuery()
+            ->whereNull($subjectColumn)
+            ->where($emailColumn, $claims['email'])
+            ->first();
+
+        if ($user !== null) {
+            Log::info("Logto linked unclaimed user {$user->getKey()} to subject {$claims['sub']}");
         }
 
         return $user;

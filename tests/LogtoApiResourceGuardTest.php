@@ -50,7 +50,7 @@ class LogtoApiResourceGuardTest extends TestCase
 
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->string('logto_sub')->unique();
+            $table->string('logto_sub')->nullable()->unique();
             $table->string('email')->nullable();
             $table->string('name')->nullable();
             $table->timestamps();
@@ -194,6 +194,67 @@ class LogtoApiResourceGuardTest extends TestCase
         $this->assertSame($first, $second);
     }
 
+    public function testLinksUnclaimedUserByEmailWhenEnabled(): void
+    {
+        config(['logto.link-unclaimed-by-email' => true]);
+        $existing = GuardTestUser::query()->create(['logto_sub' => null, 'email' => 'dave@example.com']);
+
+        $user = $this->resolveWithEmailClaim('new-tenant-sub', 'dave@example.com');
+
+        $this->assertSame($existing->getKey(), $user->getKey());
+        $this->assertSame('new-tenant-sub', $user->logto_sub);
+        $this->assertSame(1, GuardTestUser::query()->count());
+        Event::assertNotDispatched(UserProvisionedEvent::class);
+    }
+
+    public function testDoesNotLinkUnclaimedUserWhenDisabled(): void
+    {
+        $existing = GuardTestUser::query()->create(['logto_sub' => null, 'email' => 'dave@example.com']);
+
+        $user = $this->resolveWithEmailClaim('new-tenant-sub', 'dave@example.com');
+
+        $this->assertNotSame($existing->getKey(), $user->getKey());
+        $this->assertNull($existing->fresh()?->logto_sub);
+    }
+
+    public function testDoesNotLinkUserThatAlreadyHasASubject(): void
+    {
+        config(['logto.link-unclaimed-by-email' => true]);
+        $existing = GuardTestUser::query()->create(['logto_sub' => 'other-sub', 'email' => 'dave@example.com']);
+
+        $user = $this->resolveWithEmailClaim('new-tenant-sub', 'dave@example.com');
+
+        $this->assertNotSame($existing->getKey(), $user->getKey());
+        $this->assertSame('other-sub', $existing->fresh()?->logto_sub);
+    }
+
+    public function testDoesNotLinkWhenTokenHasNoEmailClaim(): void
+    {
+        config(['logto.link-unclaimed-by-email' => true]);
+        $existing = GuardTestUser::query()->create(['logto_sub' => null, 'email' => null]);
+
+        $user = $this->resolveWithEmailClaim('new-tenant-sub', null);
+
+        $this->assertNotSame($existing->getKey(), $user->getKey());
+        $this->assertNull($existing->fresh()?->logto_sub);
+    }
+
+    private function resolveWithEmailClaim(string $sub, ?string $email): GuardTestUser
+    {
+        $claims = ['sub' => $sub, 'scope' => 'user:read'];
+        if ($email !== null) {
+            $claims['email'] = $email;
+        }
+
+        $validator = $this->createMock(LogtoTokenValidator::class);
+        $validator->method('validate')->willReturn($claims);
+
+        $user = $this->makeGuard($this->makeRequestWithToken('a.b.c'), $validator, ['email' => 'email'])->user();
+        $this->assertInstanceOf(GuardTestUser::class, $user);
+
+        return $user;
+    }
+
     /**
      * @param  array<string, string>  $modelAttributes
      */
@@ -220,7 +281,7 @@ class LogtoApiResourceGuardTest extends TestCase
  * In-test Authenticatable model. Defined in the same file so the schema and
  * fixture live next to the test that uses them.
  *
- * @property string $logto_sub
+ * @property string|null $logto_sub
  * @property string|null $email
  * @property string|null $name
  */

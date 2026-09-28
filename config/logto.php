@@ -42,6 +42,16 @@ return [
         'name'  => 'name',
     ],
 
+    /*
+     * When no user matches the token's `sub`, claim an existing user whose subject column
+     * is null and whose email (the column mapped from the `email` claim above) matches the token.
+     *
+     * Intended for migrating between Logto tenants after nulling out the old subjects.
+     * Anyone who can obtain a token carrying a victim's email can take over that victim's
+     * unclaimed record, so enable it only for the migration and turn it off afterwards.
+     */
+    'link-unclaimed-by-email' => (bool) env('LOGTO_LINK_UNCLAIMED_BY_EMAIL', false),
+
     'mcp' => [
         'routes' => env('LOGTO_MCP_ROUTES', false),
 

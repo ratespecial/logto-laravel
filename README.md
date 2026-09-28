@@ -13,6 +13,7 @@ Logto.io (OAuth/OIDC) support for Laravel. This package contributes two independ
 - [Configuration](#configuration)
 - [High-level Architecture](#high-level-architecture)
 - [JIT User Provisioning](#jit-user-provisioning)
+  - [Migrating Logto tenants](#migrating-logto-tenants)
 - [Feature 1 — The `logto-api-resource` Guard](#feature-1--the-logto-api-resource-guard)
   - [Request flow](#request-flow)
   - [Migrations](#migrations)
@@ -61,6 +62,7 @@ LOGTO_MCP_SCOPES="mcp:use"
 | `LOGTO_MCP_ROUTES` | `logto.mcp.routes` | `false` | Enables the RFC 9728 discovery routes. |
 | `LOGTO_MCP_SCOPES` | `logto.mcp.scopes-supported` | `mcp:use` | Space-delimited scopes advertised in the discovery metadata. |
 | `LOGTO_MCP_PROTECTED_RESOURCE_MIDDLEWARE` | `logto.mcp.protected-resource-middleware` | `''` | Comma-delimited middleware applied to the discovery route. |
+| `LOGTO_LINK_UNCLAIMED_BY_EMAIL` | `logto.link-unclaimed-by-email` | `false` | Let a new `sub` claim an existing user whose subject is null and whose email matches. See [Migrating Logto tenants](#migrating-logto-tenants). |
 
 The provider binds `LogtoTokenValidator` and `OidcDiscoveryService` from `services.logto.*`, so add these entries to `config/services.php`:
 
@@ -111,6 +113,12 @@ The subject must be assigned at least one permission to the API resource in Logt
 > ⚠️ Any token Logto has signed for your configured `LOGTO_API_RESOURCE` audience will result in a user record being created automatically the first time it's seen. There is no manual approval step. If you need to restrict who can sign in, enforce that in Logto (sign-in experience, roles, organization membership, or by minting tokens with specific scopes) — not in this package. You can also listen for `UserProvisionedEvent` to audit or post-process new accounts.
 
 ---
+
+### Migrating Logto tenants
+
+When moving to a new Logto tenant, every user gets a new `sub`. To let existing users keep their records, set the old subject column to `NULL` and enable `LOGTO_LINK_UNCLAIMED_BY_EMAIL=true`. When no user matches a token's `sub`, the guard looks for a user with a null subject whose email column (the column mapped from the `email` claim in `logto.model-attributes`) exactly matches the token's `email` claim, and writes the new `sub` onto that record. No `UserProvisionedEvent` is dispatched for a linked record.
+
+> ⚠️ Anyone who can obtain a token from the new tenant carrying a victim's email will take over that victim's unclaimed record. Make sure the new tenant only issues verified emails, and turn this off once users have migrated. Access tokens must include the `email` claim (a Logto custom JWT claim), and matching is exact, so case differences won't link.
 
 ## Feature 1 — The `logto-api-resource` Guard
 
