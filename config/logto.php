@@ -13,9 +13,10 @@ return [
      * API resource identifier.  Must match exactly
      * This will be the audience claim in the JWT
      *
-     * Defaults to the base URL.  MCP clients such as Claude expect the resource to match the domain of the MCP server.
+     * Defaults to app.url.  MCP clients such as Claude expect the resource to match the domain of the MCP server.
+     * Deliberately not url('/'), which derives from the request's Host header and would let a caller pick the audience.
      */
-    'api-resource' => env('LOGTO_API_RESOURCE', '') ?? url('/'),
+    'api-resource' => env('LOGTO_API_RESOURCE') ?: config('app.url'),
 
     /*
      * TTL in second for cached OIDC discovery document and JWKS

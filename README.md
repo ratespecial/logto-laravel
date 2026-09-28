@@ -55,7 +55,7 @@ LOGTO_MCP_SCOPES="mcp:use"
 | Env var | Config key | Default | Purpose |
 | --- | --- | --- | --- |
 | `LOGTO_ENDPOINT` | `services.logto.endpoint` | — | Your Logto tenant URL. **Required.** |
-| `LOGTO_API_RESOURCE` | `services.logto.api-resource` | `url('/')` | JWT audience this API accepts. **Required.** |
+| `LOGTO_API_RESOURCE` | `services.logto.api-resource` | `app.url` | JWT audience this API accepts. |
 | `LOGTO_CACHE_TTL` | `services.logto.cache-ttl` | `600` | TTL (seconds) for cached OIDC discovery + JWKS. |
 | `LOGTO_SUBJECT_COLUMN` | `logto.subject-column` | `logto_sub` | User-model column that stores the JWT `sub` claim. |
 | `LOGTO_MCP_ROUTES` | `logto.mcp.routes` | `false` | Enables the RFC 9728 discovery routes. |
