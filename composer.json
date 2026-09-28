@@ -17,10 +17,10 @@
     "firebase/php-jwt": "^7.0"
   },
   "require-dev": {
-    "illuminate/console": "^11",
-    "illuminate/support": "^11",
+    "illuminate/console": "^12|^13",
+    "illuminate/support": "^12|^13",
     "laravel/pint": "^1.0",
-    "orchestra/testbench": "^9",
+    "orchestra/testbench": "^10|^11",
     "phpstan/phpstan": "^2.1.54",
     "phpunit/phpunit": "^11"
   },
