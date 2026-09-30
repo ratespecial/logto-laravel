@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
+use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
 use Ratespecial\Logto\Services\UserResolver;
 use Ratespecial\Logto\Testing\FakeOidcDiscoveryService;
@@ -23,6 +24,7 @@ class LogtoServiceProvider extends ServiceProvider
         $this->registerGuardConfig();
         $this->registerTokenValidator();
         $this->registerOidcDiscoveryService();
+        $this->registerWebClient();
         $this->registerFake();
     }
 
@@ -110,6 +112,25 @@ class LogtoServiceProvider extends ServiceProvider
         });
     }
 
+    protected function registerWebClient(): void
+    {
+        $this->app->bind(LogtoWebClient::class, function ($app) {
+            $config = $app['config']->get('logto.web');
+
+            if (empty($config['app-id']) || empty($config['app-secret'])) {
+                throw new RuntimeException('Logto web app id/secret are not configured');
+            }
+
+            return new LogtoWebClient(
+                discovery: $app->make(OidcDiscoveryService::class),
+                appId: $config['app-id'],
+                appSecret: $config['app-secret'],
+                scopes: $config['scopes'],
+                resource: $config['resource'] ?: null,
+            );
+        });
+    }
+
     /**
      * Fake Logto tenant served by FakeOidcDiscoveryService while running unit tests.
      */
@@ -127,6 +148,10 @@ class LogtoServiceProvider extends ServiceProvider
 
     protected function routes(): void
     {
+        if ($this->app['config']->get('logto.web.routes')) {
+            $this->loadRoutesFrom(__DIR__ . '/../routes/web-routes.php');
+        }
+
         if ($this->app['config']->get('logto.mcp.routes')) {
             $this->loadRoutesFrom(__DIR__ . '/../routes/mcp-routes.php');
         }

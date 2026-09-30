@@ -15,10 +15,11 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Turns validated Logto claims into a host-app user for the API guard.
+ * Turns validated Logto claims into a host-app user.  Shared by the API guard and the web sign-in flow.
  *
  * - Looks the user up by `logto.subject-column`, optionally claiming an unclaimed user by email.
  * - Persists claim-mapped attributes and dispatches {@see UserProvisionedEvent} for new rows.
+ * - Never inserts a row for a subject without an email unless `logto.provision-without-email` is on.
  * - Throws {@see DuplicateUserEmailException} when saving collides with another row's email on a unique index.
  */
 class UserResolver
@@ -48,10 +49,13 @@ class UserResolver
 
     /**
      * @param  array<string, mixed>  $claims  Must contain a non-empty `sub`.
+     * @param  bool  $allowTransient  When the user would need an email to be stored but has none, return an unsaved
+     *                                model instead of null.  Used for machine-to-machine tokens.
+     * @return Authenticatable|null Null when the user can't be stored and $allowTransient is false.
      *
      * @throws DuplicateUserEmailException
      */
-    public function resolve(array $claims): Authenticatable
+    public function resolve(array $claims, bool $allowTransient = false): ?Authenticatable
     {
         $subjectColumn = config('logto.subject-column');
 
@@ -74,6 +78,16 @@ class UserResolver
 
         $user->forceFill($attributes);
 
+        if (! $user->exists && $this->lacksRequiredEmail($claims) && ! config('logto.provision-without-email')) {
+            if (! $allowTransient) {
+                Log::debug("Logto subject {$claims['sub']} has no email; not provisioning");
+
+                return null;
+            }
+
+            return $this->withScopes($user, $claims);
+        }
+
         $this->save($user, $subjectColumn, $claims);
 
         $this->withScopes($user, $claims);
@@ -83,6 +97,16 @@ class UserResolver
         }
 
         return $user;
+    }
+
+    /**
+     * Only enforced when the `email` claim is mapped to a user attribute; otherwise the host app doesn't store emails.
+     *
+     * @param  array<string, mixed>  $claims
+     */
+    protected function lacksRequiredEmail(array $claims): bool
+    {
+        return isset($this->modelAttributes['email']) && empty($claims['email']);
     }
 
     /**

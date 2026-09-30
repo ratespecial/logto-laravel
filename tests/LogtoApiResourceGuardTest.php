@@ -318,6 +318,28 @@ class LogtoApiResourceGuardTest extends TestCase
             ->resolve(['sub' => 'new-sub', 'email' => 'dave@example.com', 'name' => 'Dave', 'scope' => 'user:read']);
     }
 
+    public function testDoesNotPersistUserWithoutEmailButStillAuthenticates(): void
+    {
+        $user = $this->resolveWithEmailClaim('m2m-sub', null);
+
+        $this->assertFalse($user->exists);
+        $this->assertSame('m2m-sub', $user->logto_sub);
+        $this->assertTrue($user->hasOAuthScope('user:read'));
+        $this->assertSame(0, TestUser::query()->count());
+        Event::assertNotDispatched(UserProvisionedEvent::class);
+    }
+
+    public function testProvisionsUserWithoutEmailWhenConfigured(): void
+    {
+        config(['logto.provision-without-email' => true]);
+
+        $user = $this->resolveWithEmailClaim('m2m-sub', null);
+
+        $this->assertTrue($user->exists);
+        $this->assertSame(1, TestUser::query()->count());
+        Event::assertDispatchedTimes(UserProvisionedEvent::class, 1);
+    }
+
     public function testStillUpdatesExistingUserMatchedBySubjectWhenTokenHasNoEmail(): void
     {
         $existing = TestUser::query()->create(['logto_sub' => 'known-sub', 'email' => 'eve@example.com']);

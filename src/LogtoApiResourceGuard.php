@@ -21,7 +21,7 @@ use Throwable;
  * - JWT audience is this Laravel API
  * - JWT scope isn't blank, meaning they have permission to do at least one action here
  *
- * Will JIT provision a user if they don't exist (see {@see UserResolver})
+ * Will JIT provision a user if they don't exist, unless the token has no email (see {@see UserResolver})
  */
 class LogtoApiResourceGuard implements Guard
 {
@@ -51,7 +51,8 @@ class LogtoApiResourceGuard implements Guard
             return null;
         }
 
-        $this->user          = $this->resolver->resolve($claims);
+        // Without an email the user is transient (unsaved) unless `logto.provision-without-email` is on.
+        $this->user          = $this->resolver->resolve($claims, allowTransient: true);
         $this->userFromToken = true;
 
         return $this->user;
