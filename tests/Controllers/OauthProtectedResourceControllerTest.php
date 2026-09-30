@@ -34,11 +34,6 @@ class OauthProtectedResourceControllerTest extends TestCase
                 'protected-resource-middleware' => '',
             ],
         ]);
-        $app['config']->set('services.logto', [
-            'endpoint'     => 'https://tenant.logto.app',
-            'api-resource' => 'https://api.example.com',
-            'cache-ttl'    => 60,
-        ]);
     }
 
     protected function setUp(): void

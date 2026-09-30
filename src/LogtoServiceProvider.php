@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
+use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
+use Ratespecial\Logto\Services\UserResolver;
 use RuntimeException;
 
 class LogtoServiceProvider extends ServiceProvider
@@ -20,6 +22,7 @@ class LogtoServiceProvider extends ServiceProvider
         $this->registerGuardConfig();
         $this->registerTokenValidator();
         $this->registerOidcDiscoveryService();
+        $this->registerWebClient();
     }
 
     public function boot(): void
@@ -30,13 +33,10 @@ class LogtoServiceProvider extends ServiceProvider
         // Configure Guard driver.  Must be configured to a guard in config/auth.php `guards`.
         // For use with `auth` middleware.
         Auth::extend('logto-api-resource', function ($app, $_name, array $config) {
-            $providerConfig = $app['config']->get("auth.providers.{$config['provider']}");
-
             return new LogtoApiResourceGuard(
                 request: $app['request'],
                 validator: $app->make(LogtoTokenValidator::class),
-                userModel: $providerConfig['model'],
-                modelAttributes: $app['config']->get('logto.model-attributes', []),
+                resolver: UserResolver::forProvider($config['provider']),
             );
         });
 
@@ -100,8 +100,31 @@ class LogtoServiceProvider extends ServiceProvider
         });
     }
 
+    protected function registerWebClient(): void
+    {
+        $this->app->bind(LogtoWebClient::class, function ($app) {
+            $config = $app['config']->get('logto.web');
+
+            if (empty($config['app-id']) || empty($config['app-secret'])) {
+                throw new RuntimeException('Logto web app id/secret are not configured');
+            }
+
+            return new LogtoWebClient(
+                discovery: $app->make(OidcDiscoveryService::class),
+                appId: $config['app-id'],
+                appSecret: $config['app-secret'],
+                scopes: $config['scopes'],
+                resource: $config['resource'] ?: null,
+            );
+        });
+    }
+
     protected function routes(): void
     {
+        if ($this->app['config']->get('logto.web.routes')) {
+            $this->loadRoutesFrom(__DIR__ . '/../routes/web-routes.php');
+        }
+
         if ($this->app['config']->get('logto.mcp.routes')) {
             $this->loadRoutesFrom(__DIR__ . '/../routes/mcp-routes.php');
         }

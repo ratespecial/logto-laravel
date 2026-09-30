@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Ratespecial\Logto\Models;
 
 /**
- * Represents an OpenID Provider Configuration Information document as defined by
- * OpenID Connect Discovery 1.0, Section 3.
+ * Represents an OpenID Provider Configuration Information document as defined by OpenID Connect Discovery 1.0, Section 3.
  *
- * All properties are public to allow direct access. The class is marked with
- * {@see \AllowDynamicProperties} so that any additional metadata fields introduced
- * by future revisions of the specification (or vendor extensions) can still be
- * assigned without requiring a code change.
+ * All properties are public to allow direct access. The class is marked with {@see \AllowDynamicProperties} so that any additional
+ * metadata fields introduced by future revisions of the specification (or vendor extensions) can still be assigned without
+ * requiring a code change.
  *
  * @see https://openid.net/specs/openid-connect-discovery-1_0.html
  */
@@ -34,6 +32,13 @@ class OidcDiscoveryDoc
      * Implicit Flow is used.
      */
     public ?string $token_endpoint = null;
+
+    /**
+     * URL of the OP's RP-Initiated Logout endpoint.
+     *
+     * @see https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+     */
+    public ?string $end_session_endpoint = null;
 
     /**
      * URL of the OP's UserInfo Endpoint. This URL MUST use the https scheme.
