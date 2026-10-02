@@ -120,6 +120,8 @@ When moving to a new Logto tenant, every user gets a new `sub`. To let existing 
 
 > ⚠️ Anyone who can obtain a token from the new tenant carrying a victim's email will take over that victim's unclaimed record. Make sure the new tenant only issues verified emails, and turn this off once users have migrated. Access tokens must include the `email` claim (a Logto custom JWT claim), and matching is exact, so case differences won't link.
 
+If a new `sub` arrives with an email that another row already holds, and your users table has a unique index on that email column, the insert would fail. The resolver turns this into `Ratespecial\Logto\Exceptions\DuplicateUserEmailException`, which carries `subject`, `email`, `existingUserKey` and `existingUserUnclaimed`. When the existing row's subject is null, enabling `LOGTO_LINK_UNCLAIMED_BY_EMAIL` resolves it. Otherwise the email belongs to another Logto subject and needs manual cleanup. The exception propagates, so map it with `$exceptions->render(...)` if you want a specific response.
+
 ## Feature 1 — The `logto-api-resource` Guard
 
 The guard:

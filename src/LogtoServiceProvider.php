@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
+use Ratespecial\Logto\Services\UserResolver;
 use RuntimeException;
 
 class LogtoServiceProvider extends ServiceProvider
@@ -30,13 +31,10 @@ class LogtoServiceProvider extends ServiceProvider
         // Configure Guard driver.  Must be configured to a guard in config/auth.php `guards`.
         // For use with `auth` middleware.
         Auth::extend('logto-api-resource', function ($app, $_name, array $config) {
-            $providerConfig = $app['config']->get("auth.providers.{$config['provider']}");
-
             return new LogtoApiResourceGuard(
                 request: $app['request'],
                 validator: $app->make(LogtoTokenValidator::class),
-                userModel: $providerConfig['model'],
-                modelAttributes: $app['config']->get('logto.model-attributes', []),
+                resolver: UserResolver::forProvider($config['provider']),
             );
         });
 

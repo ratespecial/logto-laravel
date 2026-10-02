@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace Ratespecial\Logto;
 
 use Illuminate\Auth\GuardHelpers;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Guard;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Ratespecial\Logto\Contracts\OAuthScopable;
-use Ratespecial\Logto\Events\UserProvisionedEvent;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
+use Ratespecial\Logto\Services\UserResolver;
 use Throwable;
 
 /**
@@ -22,21 +19,16 @@ use Throwable;
  * - JWT audience is this Laravel API
  * - JWT scope isn't blank, meaning they have permission to do at least one action here
  *
- * Will JIT provision a user if they don't exist
+ * Will JIT provision a user if they don't exist (see {@see UserResolver})
  */
 class LogtoApiResourceGuard implements Guard
 {
     use GuardHelpers;
 
-    /**
-     * @param  class-string<Authenticatable>  $userModel
-     * @param  array<string, string>  $modelAttributes  Mapping of JWT claim name => user model attribute name.
-     */
     public function __construct(
         private readonly Request $request,
         private readonly LogtoTokenValidator $validator,
-        private readonly string $userModel,
-        private readonly array $modelAttributes = [],
+        private readonly UserResolver $resolver,
     ) {}
 
     public function user()
@@ -50,7 +42,7 @@ class LogtoApiResourceGuard implements Guard
             return null;
         }
 
-        $this->user = $this->resolveUser($claims);
+        $this->user = $this->resolver->resolve($claims);
 
         return $this->user;
     }
@@ -94,84 +86,6 @@ class LogtoApiResourceGuard implements Guard
         }
 
         return $claims;
-    }
-
-    /**
-     * @param  array<string, mixed>  $claims
-     */
-    protected function resolveUser(array $claims): Authenticatable
-    {
-        $subjectColumn = config('logto.subject-column');
-
-        /** @var Model $model */
-        $model = new $this->userModel();
-
-        /** @var Authenticatable&Model&OAuthScopable $user */
-        $user = $model->newQuery()
-            ->firstOrNew([$subjectColumn => $claims['sub']]);
-
-        if (! $user->exists && config('logto.link-unclaimed-by-email')) {
-            $user = $this->findUnclaimedUser($model, $subjectColumn, $claims) ?? $user;
-        }
-
-        // forceFill so claim-mapped attributes are written even when the host
-        // app's user model doesn't mark them fillable. The values come from a
-        // validated JWT, not request input, so mass-assignment guarding is moot.
-        $attributes                 = $this->mapClaimsToAttributes($claims);
-        $attributes[$subjectColumn] = $claims['sub'];
-
-        $user->forceFill($attributes)->save();
-
-        $user->setOAuthScopes((string) $claims['scope']);
-
-        if ($user->wasRecentlyCreated) {
-            UserProvisionedEvent::dispatch($user);
-        }
-
-        return $user;
-    }
-
-    /**
-     * Find an existing user whose subject was cleared (e.g. after a Logto tenant migration)
-     * and whose email matches the token's email claim, so it can be claimed by the new subject.
-     *
-     * @param  array<string, mixed>  $claims
-     * @return (Authenticatable&Model&OAuthScopable)|null
-     */
-    protected function findUnclaimedUser(Model $model, string $subjectColumn, array $claims): ?Model
-    {
-        $emailColumn = $this->modelAttributes['email'] ?? null;
-        if ($emailColumn === null || empty($claims['email'])) {
-            return null;
-        }
-
-        /** @var (Authenticatable&Model&OAuthScopable)|null $user */
-        $user = $model->newQuery()
-            ->whereNull($subjectColumn)
-            ->where($emailColumn, $claims['email'])
-            ->first();
-
-        if ($user !== null) {
-            Log::info("Logto linked unclaimed user {$user->getKey()} to subject {$claims['sub']}");
-        }
-
-        return $user;
-    }
-
-    /**
-     * @param  array<string, mixed>  $claims
-     * @return array<string, mixed>
-     */
-    protected function mapClaimsToAttributes(array $claims): array
-    {
-        $attributes = [];
-        foreach ($this->modelAttributes as $claim => $field) {
-            if (! empty($claims[$claim])) {
-                $attributes[$field] = $claims[$claim];
-            }
-        }
-
-        return $attributes;
     }
 
     protected function reject(string $reason): null
