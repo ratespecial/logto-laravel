@@ -318,6 +318,23 @@ class WebSignInTest extends TestCase
         $this->assertSame(0, TestUser::query()->count());
     }
 
+    public function testCallbackRejectsUserWhoseEmailBelongsToAnotherAccount(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->unique('email');
+        });
+        TestUser::query()->create(['logto_sub' => null, 'email' => 'alice@example.com']);
+        $this->fakeLogto(['sub' => 'web-user', 'email' => 'alice@example.com']);
+
+        $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state')
+            ->assertForbidden()
+            ->assertSeeText('an account with this email already exists');
+
+        $this->assertGuest();
+        $this->assertSame(1, TestUser::query()->count());
+    }
+
     public function testCallbackProvisionsUserWithoutEmailWhenConfigured(): void
     {
         config(['logto.provision-without-email' => true]);

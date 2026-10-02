@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Ratespecial\Logto\Exceptions\DuplicateUserEmailException;
 use Ratespecial\Logto\Exceptions\SignInException;
 use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\UserResolver;
@@ -85,7 +86,14 @@ class WebAuthController extends Controller
             throw new RuntimeException("Guard [{$guardName}] has no provider configured");
         }
 
-        $user = UserResolver::forProvider($provider)->resolve($claims);
+        try {
+            $user = UserResolver::forProvider($provider)->resolve($claims);
+        } catch (DuplicateUserEmailException $ex) {
+            report($ex);
+
+            throw new SignInException('Sign-in failed: an account with this email already exists. Contact an administrator.', $ex);
+        }
+
         if ($user === null) {
             throw new SignInException('Sign-in failed: your account has no email address');
         }
