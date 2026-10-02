@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ratespecial\Logto;
 
 use Illuminate\Auth\GuardHelpers;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,14 @@ use Throwable;
  */
 class LogtoApiResourceGuard implements Guard
 {
-    use GuardHelpers;
+    use GuardHelpers {
+        setUser as private setUserFromHelpers;
+    }
+
+    /**
+     * @var bool Whether the user was resolved from the current request's token, rather than set with setUser().
+     */
+    private bool $userFromToken = false;
 
     public function __construct(
         private Request $request,
@@ -42,18 +50,32 @@ class LogtoApiResourceGuard implements Guard
             return null;
         }
 
-        $this->user = $this->resolver->resolve($claims);
+        $this->user          = $this->resolver->resolve($claims);
+        $this->userFromToken = true;
 
         return $this->user;
     }
 
+    public function setUser(Authenticatable $user): static
+    {
+        $this->setUserFromHelpers($user);
+        $this->userFromToken = false;
+
+        return $this;
+    }
+
     /**
-     * Swap in a new request and forget the user resolved from the previous one.
+     * Swap in a new request and forget the user resolved from the previous one's token.
+     * A user given to setUser() (e.g. actingAs($user, 'logto')) is kept, as Laravel's own guards do.
      */
     public function setRequest(Request $request): static
     {
         $this->request = $request;
-        $this->user    = null;
+
+        if ($this->userFromToken) {
+            $this->user          = null;
+            $this->userFromToken = false;
+        }
 
         return $this;
     }

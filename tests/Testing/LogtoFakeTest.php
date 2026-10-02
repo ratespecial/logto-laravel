@@ -153,6 +153,23 @@ class LogtoFakeTest extends TestCase
         $this->withoutToken()->getJson('/me')->assertUnauthorized();
     }
 
+    public function testActingAsUserSurvivesTheRequest(): void
+    {
+        $user = TestUser::query()->create(['logto_sub' => 'bob']);
+
+        $this->actingAs($user, 'logto')->getJson('/me')->assertOk()->assertJson(['sub' => 'bob']);
+        $this->getJson('/me')->assertOk()->assertJson(['sub' => 'bob']);
+    }
+
+    public function testActingAsUserAfterATokenRequest(): void
+    {
+        $this->actingAsLogto('user:read', ['sub' => 'first'])->getJson('/me')->assertJson(['sub' => 'first']);
+
+        $user = TestUser::query()->create(['logto_sub' => 'bob']);
+
+        $this->withoutToken()->actingAs($user, 'logto')->getJson('/me')->assertOk()->assertJson(['sub' => 'bob']);
+    }
+
     public function testLogtoTokenThrowsWhenFakeIsDisabled(): void
     {
         config(['logto.testing.fake' => false]);
