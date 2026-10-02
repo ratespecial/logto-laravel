@@ -26,7 +26,7 @@ class LogtoApiResourceGuard implements Guard
     use GuardHelpers;
 
     public function __construct(
-        private readonly Request $request,
+        private Request $request,
         private readonly LogtoTokenValidator $validator,
         private readonly UserResolver $resolver,
     ) {}
@@ -45,6 +45,17 @@ class LogtoApiResourceGuard implements Guard
         $this->user = $this->resolver->resolve($claims);
 
         return $this->user;
+    }
+
+    /**
+     * Swap in a new request and forget the user resolved from the previous one.
+     */
+    public function setRequest(Request $request): static
+    {
+        $this->request = $request;
+        $this->user    = null;
+
+        return $this;
     }
 
     /**

@@ -52,6 +52,15 @@ return [
      */
     'link-unclaimed-by-email' => (bool) env('LOGTO_LINK_UNCLAIMED_BY_EMAIL', false),
 
+    'testing' => [
+        /*
+         * When the app is running unit tests, serve a fake OIDC discovery document and JWKS
+         * (see Ratespecial\Logto\Testing\LogtoFake) instead of contacting Logto.
+         * Set false to make tests hit the configured endpoint.
+         */
+        'fake' => (bool) env('LOGTO_TESTING_FAKE', true),
+    ],
+
     'mcp' => [
         'routes' => env('LOGTO_MCP_ROUTES', false),
 

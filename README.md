@@ -27,6 +27,7 @@ Logto.io (OAuth/OIDC) support for Laravel. This package contributes two independ
   - [Enable the discovery routes](#enable-the-discovery-routes)
   - [Protecting an `Mcp::web` server with the Logto guard](#protecting-an-mcpweb-server-with-the-logto-guard)
   - [Adding the MCP server to Claude Code](#adding-the-mcp-server-to-claude-code)
+- [Testing your app](#testing-your-app)
 - [Development](#development)
 - [License](#license)
 
@@ -327,6 +328,39 @@ claude mcp add \
 The discovery handshake then kicks in automatically — Claude Code hits `/mcp`, gets a `401` with the `WWW-Authenticate` header, fetches `/.well-known/oauth-protected-resource/mcp`, and runs the OAuth flow against the Logto issuer returned in the metadata using the supplied client ID and callback port.
 
 ---
+
+## Testing your app
+
+While the app is running unit tests (`app()->runningUnitTests()`), the package replaces `OidcDiscoveryService` with `Testing\FakeOidcDiscoveryService`. That service serves a fake discovery document and JWKS from memory, so a Bearer token in a test never makes a request to Logto. It does not use `Http::fake()`, so your own `Http` assertions are unaffected. `LOGTO_ENDPOINT` isn't needed in tests: the fake falls back to `https://logto.test`.
+
+To call the real tenant from tests, turn the fake off:
+
+```dotenv
+LOGTO_TESTING_FAKE=false
+```
+
+The fake serves a generated public key. To exercise the full guard path (signature, issuer, audience, the empty-scope rejection, JIT provisioning), add `InteractsWithLogto` to your `TestCase` and send a real, signed token:
+
+```php
+use Ratespecial\Logto\Testing\InteractsWithLogto;
+
+abstract class TestCase extends BaseTestCase
+{
+    use InteractsWithLogto;
+}
+
+// In a test
+$this->actingAsLogto(['user:read'], ['sub' => 'alice', 'email' => 'alice@example.com'])
+    ->getJson('/api/me')
+    ->assertOk();
+
+// Or build the token yourself; claims override the defaults (iss, aud, sub, iat, exp)
+$this->withToken($this->logtoToken(['aud' => 'https://other.example.com', 'scope' => 'user:read']))
+    ->getJson('/api/me')
+    ->assertUnauthorized();
+```
+
+If a test only needs an authenticated user and not the token path, `actingAs($user, 'logto')` still works.
 
 ## Development
 
