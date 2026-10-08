@@ -19,4 +19,9 @@ interface OAuthScopable
     public function setOAuthScopes(array|string $scopes): void;
 
     public function hasOAuthScope(string $scope): bool;
+
+    /**
+     * @return list<string>
+     */
+    public function getOAuthScopes(): array;
 }

@@ -42,4 +42,14 @@ trait HasOAuthScopes
     {
         return in_array($scope, $this->oauthScopes, true);
     }
+
+    /**
+     * The Logto permissions (scopes) on the access token that authenticated this request.
+     *
+     * @return list<string> Example: ["user:read", "user:write"]
+     */
+    public function getOAuthScopes(): array
+    {
+        return $this->oauthScopes;
+    }
 }
