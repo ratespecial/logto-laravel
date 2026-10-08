@@ -10,6 +10,7 @@ use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
+use Ratespecial\Logto\Exceptions\TokenValidationException;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
 use Ratespecial\Logto\Services\UserResolver;
 use Throwable;
@@ -105,6 +106,10 @@ class LogtoApiResourceGuard implements Guard
         } catch (OidcDiscoveryException $ex) {
             // Something is likely wrong with the configuration.  Be loud about this so it's not confused with a bad login.
             throw $ex;
+        } catch (TokenValidationException) {
+            // Don't bother recording debug notices.  This happens a lot when two guards are applied
+            // such as `auth:logto,api`
+            return null;
         } catch (Throwable $ex) {
             return $this->reject("invalid token: {$ex->getMessage()}");
         }
