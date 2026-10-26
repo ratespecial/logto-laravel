@@ -133,6 +133,14 @@ class LogtoTokenValidatorTest extends TestCase
         $this->makeValidator()->validate($token);
     }
 
+    public function testRejectsOpaqueTokenAsTokenValidationException(): void
+    {
+        $this->expectException(TokenValidationException::class);
+        $this->expectExceptionMessage('Not a JWT');
+
+        $this->makeValidator()->validate('abc123plaintextapitoken');
+    }
+
     private function makeValidator(): LogtoTokenValidator
     {
         $doc         = new OidcDiscoveryDoc();

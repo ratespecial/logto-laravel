@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase;
@@ -17,6 +18,7 @@ use Ratespecial\Logto\Exceptions\TokenValidationException;
 use Ratespecial\Logto\LogtoApiResourceGuard;
 use Ratespecial\Logto\LogtoServiceProvider;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
+use Ratespecial\Logto\Services\OidcDiscoveryService;
 use Ratespecial\Logto\Services\UserResolver;
 use Tests\Ratespecial\Logto\Fixtures\TestUser;
 
@@ -74,6 +76,21 @@ class LogtoApiResourceGuardTest extends TestCase
         $guard = $this->makeGuard($this->makeRequestWithToken('bad.token.here'), $validator);
 
         $this->assertNull($guard->user());
+    }
+
+    public function testReturnsNullWithoutLoggingWhenTokenIsNotAJwt(): void
+    {
+        $validator = new LogtoTokenValidator($this->createMock(OidcDiscoveryService::class), 'https://api.example.com');
+
+        $logged = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$logged): void {
+            $logged[] = $event->message;
+        });
+
+        $guard = $this->makeGuard($this->makeRequestWithToken('abc123plaintextapitoken'), $validator);
+
+        $this->assertNull($guard->user());
+        $this->assertSame([], $logged);
     }
 
     public function testReturnsNullWhenSubjectClaimIsMissing(): void

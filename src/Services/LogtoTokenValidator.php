@@ -27,6 +27,11 @@ class LogtoTokenValidator
      */
     public function validate(string $token): array
     {
+        // Opaque bearer tokens (e.g. a legacy api_token behind `auth:logto,api`) aren't JWTs; let the next guard handle them.
+        if (substr_count($token, '.') !== 2) {
+            throw new TokenValidationException('Not a JWT');
+        }
+
         $keys = JWK::parseKeySet($this->discovery->getJwks());
 
         $payload = (array) JWT::decode($token, $keys);
