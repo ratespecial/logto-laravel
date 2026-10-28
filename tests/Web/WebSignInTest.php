@@ -60,6 +60,8 @@ class WebSignInTest extends TestCase
         $app['config']->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
         $app['config']->set('auth.providers.users.model', TestUser::class);
         $app['config']->set('logto.endpoint', self::ENDPOINT);
+        // These tests stub the tenant with Http::fake (token exchange included), so the package's discovery fake is off
+        $app['config']->set('logto.testing.fake', false);
         $app['config']->set('logto.web', array_merge(config('logto.web') ?? [], [
             'routes'     => true,
             'app-id'     => self::APP_ID,

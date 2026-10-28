@@ -45,6 +45,7 @@ class LogtoFake
             'jwks_uri'               => $this->issuer . '/jwks',
             'authorization_endpoint' => $this->issuer . '/auth',
             'token_endpoint'         => $this->issuer . '/token',
+            'end_session_endpoint'   => $this->issuer . '/session/end',
         ];
     }
 
