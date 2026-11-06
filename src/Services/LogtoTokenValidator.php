@@ -9,6 +9,7 @@ use Firebase\JWT\JWT;
 use Illuminate\Support\Arr;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Exceptions\TokenValidationException;
+use Throwable;
 
 class LogtoTokenValidator
 {
@@ -34,6 +35,12 @@ class LogtoTokenValidator
 
         $keys = JWK::parseKeySet($this->discovery->getJwks());
 
+        // An unknown key ID usually means Logto rotated its signing key since the JWKS was cached.
+        $kid = self::keyId($token);
+        if ($kid !== null && ! isset($keys[$kid])) {
+            $keys = JWK::parseKeySet($this->discovery->refreshJwks());
+        }
+
         $payload = (array) JWT::decode($token, $keys);
 
         if (($payload['iss'] ?? null) !== $this->discovery->get()->issuer) {
@@ -46,5 +53,20 @@ class LogtoTokenValidator
         }
 
         return $payload;
+    }
+
+    /**
+     * The `kid` from the token header, or null if the header can't be read. JWT::decode reports malformed
+     * headers itself, so they aren't handled here.
+     */
+    private static function keyId(string $token): ?string
+    {
+        try {
+            $header = JWT::jsonDecode(JWT::urlsafeB64Decode(explode('.', $token)[0]));
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_object($header) && isset($header->kid) && is_string($header->kid) ? $header->kid : null;
     }
 }

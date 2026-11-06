@@ -506,6 +506,8 @@ Logto only puts a permission in the access token when the sign-in request asks f
 
 The check only runs during the callback. Changing a user's roles in Logto takes effect at their next sign-in; an existing Laravel session keeps working until it ends.
 
+The permissions granted at sign-in are kept in the Laravel session and put back on the user each time the guard loads them, so `can:<scope>` middleware and `$user->can('<scope>')` keep working on later requests. Like the check itself, they are a snapshot: a role removed in Logto stops applying at the user's next sign-in. Logging out of the guard clears them.
+
 #### 1. Anyone who can sign in (default)
 
 Without `LOGTO_WEB_RESOURCE`, `LogtoWebClient::requiresResource()` returns false and `WebAuthController::withApiScope()` never runs. The callback uses only the ID token: no access token is requested and no scopes are checked. Every Logto user who can sign in to the Traditional Web app gets a Laravel session, and is provisioned on their first sign-in.

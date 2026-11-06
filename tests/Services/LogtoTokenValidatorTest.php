@@ -6,11 +6,13 @@ namespace Tests\Ratespecial\Logto\Services;
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\SignatureInvalidException;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Ratespecial\Logto\Exceptions\TokenValidationException;
 use Ratespecial\Logto\Models\OidcDiscoveryDoc;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
+use UnexpectedValueException;
 
 class LogtoTokenValidatorTest extends TestCase
 {
@@ -133,6 +135,56 @@ class LogtoTokenValidatorTest extends TestCase
         $this->makeValidator()->validate($token);
     }
 
+    public function testRefetchesJwksWhenTokenKeyIdIsUnknown(): void
+    {
+        // Logto rotated its key: the token is signed with a kid the cached JWKS doesn't have yet.
+        [$newPrivateKey, $newJwks] = self::generateKey('rotated-key');
+
+        $token = JWT::encode(
+            ['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'sub' => 'user-123'],
+            $newPrivateKey,
+            'RS256',
+            'rotated-key',
+        );
+
+        $discovery = $this->makeDiscovery();
+        $discovery->expects($this->once())->method('refreshJwks')->willReturn($newJwks);
+
+        $claims = (new LogtoTokenValidator($discovery, self::AUDIENCE))->validate($token);
+
+        $this->assertSame('user-123', $claims['sub']);
+    }
+
+    public function testDoesNotRefetchJwksWhenKeyIdIsKnown(): void
+    {
+        $token = $this->signToken(['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'sub' => 'user-123']);
+
+        $discovery = $this->makeDiscovery();
+        $discovery->expects($this->never())->method('refreshJwks');
+
+        (new LogtoTokenValidator($discovery, self::AUDIENCE))->validate($token);
+    }
+
+    public function testRejectsUnknownKeyIdThatIsStillMissingAfterRefetch(): void
+    {
+        [$strangerKey] = self::generateKey('stranger');
+
+        $token = JWT::encode(
+            ['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'sub' => 'user-123'],
+            $strangerKey,
+            'RS256',
+            'stranger',
+        );
+
+        $discovery = $this->makeDiscovery();
+        $discovery->expects($this->once())->method('refreshJwks')->willReturn($this->jwks);
+
+        $this->expectException(UnexpectedValueException::class);
+        $this->expectExceptionMessage('"kid" invalid');
+
+        (new LogtoTokenValidator($discovery, self::AUDIENCE))->validate($token);
+    }
+
     public function testRejectsOpaqueTokenAsTokenValidationException(): void
     {
         $this->expectException(TokenValidationException::class);
@@ -143,6 +195,11 @@ class LogtoTokenValidatorTest extends TestCase
 
     private function makeValidator(): LogtoTokenValidator
     {
+        return new LogtoTokenValidator($this->makeDiscovery(), self::AUDIENCE);
+    }
+
+    private function makeDiscovery(): OidcDiscoveryService&MockObject
+    {
         $doc         = new OidcDiscoveryDoc();
         $doc->issuer = self::ISSUER;
 
@@ -150,7 +207,29 @@ class LogtoTokenValidatorTest extends TestCase
         $discovery->method('get')->willReturn($doc);
         $discovery->method('getJwks')->willReturn($this->jwks);
 
-        return new LogtoTokenValidator($discovery, self::AUDIENCE);
+        return $discovery;
+    }
+
+    /**
+     * @return array{0: string, 1: array{keys: list<array<string, string>>}} PEM private key and a JWKS holding its public key.
+     */
+    private static function generateKey(string $kid): array
+    {
+        $resource = openssl_pkey_new([
+            'private_key_bits' => 2048,
+            'private_key_type' => OPENSSL_KEYTYPE_RSA,
+        ]);
+        openssl_pkey_export($resource, $privateKey);
+        $details = openssl_pkey_get_details($resource);
+
+        return [$privateKey, ['keys' => [[
+            'kty' => 'RSA',
+            'kid' => $kid,
+            'use' => 'sig',
+            'alg' => 'RS256',
+            'n'   => self::base64Url($details['rsa']['n']),
+            'e'   => self::base64Url($details['rsa']['e']),
+        ]]]];
     }
 
     /**

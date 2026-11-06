@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Ratespecial\Logto;
 
+use Illuminate\Auth\Events\Authenticated;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Ratespecial\Logto\Services\LogtoTokenValidator;
 use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
 use Ratespecial\Logto\Services\UserResolver;
+use Ratespecial\Logto\Services\WebSessionScopes;
 use Ratespecial\Logto\Testing\FakeOidcDiscoveryService;
 use Ratespecial\Logto\Testing\LogtoFake;
 use RuntimeException;
@@ -26,6 +30,8 @@ class LogtoServiceProvider extends ServiceProvider
         $this->registerOidcDiscoveryService();
         $this->registerWebClient();
         $this->registerFake();
+
+        $this->app->bind(WebSessionScopes::class, fn ($app) => new WebSessionScopes($app['session.store']));
     }
 
     public function boot(): void
@@ -59,6 +65,31 @@ class LogtoServiceProvider extends ServiceProvider
             }
 
             return $user->hasOAuthScope($ability) ? true : null;
+        });
+
+        $this->webSessionScopes();
+    }
+
+    /**
+     * Restore the scopes granted at web sign-in each time the web guard loads the user from the session,
+     * and drop them when that guard logs out. See {@see WebSessionScopes}.
+     */
+    protected function webSessionScopes(): void
+    {
+        if (! $this->app['config']->get('logto.web.routes')) {
+            return;
+        }
+
+        Event::listen(Authenticated::class, function (Authenticated $event) {
+            if ($event->guard === config('logto.web.guard')) {
+                $this->app->make(WebSessionScopes::class)->restore($event->user);
+            }
+        });
+
+        Event::listen(Logout::class, function (Logout $event) {
+            if ($event->guard === config('logto.web.guard')) {
+                $this->app->make(WebSessionScopes::class)->forget();
+            }
         });
     }
 

@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Tests\Ratespecial\Logto\Web;
 
 use Firebase\JWT\JWT;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Client\Request;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase;
@@ -68,6 +71,22 @@ class WebSignInTest extends TestCase
             'app-id'     => self::APP_ID,
             'app-secret' => self::SECRET,
         ]));
+    }
+
+    /**
+     * @param  Router  $router
+     */
+    protected function defineRoutes($router): void
+    {
+        // Stands in for a host-app page: reports the scopes the web guard's user carries on this request.
+        $router->middleware(['web', 'auth'])->get('/scopes', function () {
+            $user = Auth::user();
+            if (! $user instanceof TestUser) {
+                abort(500, 'Expected a TestUser');
+            }
+
+            return ['scopes' => $user->getOAuthScopes(), 'can-orders' => Gate::forUser($user)->allows('orders:read')];
+        });
     }
 
     protected function setUp(): void
@@ -393,6 +412,59 @@ class WebSignInTest extends TestCase
         $this->assertSame(0, TestUser::query()->count());
     }
 
+    public function testScopesGrantedAtSignInLastForLaterRequests(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read']);
+
+        $this->withSession(['logto.web' => $this->flow()])->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        // A later request: the guard has to load the user from the session again, as it would in production.
+        Auth::forgetGuards();
+
+        $this->get('https://app.example.com/scopes')
+            ->assertOk()
+            ->assertExactJson(['scopes' => ['orders:read'], 'can-orders' => true]);
+    }
+
+    public function testSignInWithoutResourceStoresNoScopes(): void
+    {
+        $this->fakeLogto();
+
+        $this->withSession(['logto.web' => $this->flow(), 'logto_web_scopes' => ['user' => '1', 'scopes' => ['stale']]])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $this->assertAuthenticated();
+        $this->assertFalse(session()->has('logto_web_scopes'));
+    }
+
+    public function testStoredScopesAreNotAppliedToAnotherUser(): void
+    {
+        $user = TestUser::query()->create(['logto_sub' => 'someone', 'email' => 'bob@example.com']);
+
+        $this->withSession([
+            $this->webGuard()->getName()   => $user->getKey(),
+            'logto_web_scopes'             => ['user' => (string) ($user->getKey() + 1), 'scopes' => ['orders:read']],
+        ])
+            ->get('https://app.example.com/scopes')
+            ->assertOk()
+            ->assertExactJson(['scopes' => [], 'can-orders' => false]);
+    }
+
+    public function testLogoutForgetsStoredScopes(): void
+    {
+        $user = TestUser::query()->create(['logto_sub' => 'someone', 'email' => 'bob@example.com']);
+
+        $this->withSession(['logto_web_scopes' => ['user' => (string) $user->getKey(), 'scopes' => ['orders:read']]]);
+        $guard = $this->webGuard();
+        $guard->login($user);
+        $this->assertTrue($user->hasOAuthScope('orders:read'));
+
+        $guard->logout();
+
+        $this->assertFalse(session()->has('logto_web_scopes'));
+    }
+
     public function testRequiredScopesAllPresentSignsIn(): void
     {
         config(['logto.web.resource' => 'https://api.example.com', 'logto.web.required-scopes' => 'orders:admin orders:read']);
@@ -517,6 +589,14 @@ class WebSignInTest extends TestCase
         $this->assertSame('/logto/sign-in', route('logto.sign-in', absolute: false));
         $this->assertSame('/logto/callback', route('logto.callback', absolute: false));
         $this->assertSame('/logto/sign-out', route('logto.sign-out', absolute: false));
+    }
+
+    private function webGuard(): SessionGuard
+    {
+        $guard = Auth::guard('web');
+        $this->assertInstanceOf(SessionGuard::class, $guard);
+
+        return $guard;
     }
 
     /**

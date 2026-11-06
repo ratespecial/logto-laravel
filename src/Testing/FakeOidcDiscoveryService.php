@@ -31,4 +31,12 @@ class FakeOidcDiscoveryService extends OidcDiscoveryService
     {
         return $this->fake->jwks();
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function refreshJwks(): array
+    {
+        return $this->fake->jwks();
+    }
 }

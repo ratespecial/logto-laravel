@@ -14,6 +14,7 @@ use Ratespecial\Logto\Exceptions\DuplicateUserEmailException;
 use Ratespecial\Logto\Exceptions\SignInException;
 use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\UserResolver;
+use Ratespecial\Logto\Services\WebSessionScopes;
 use RuntimeException;
 
 /**
@@ -63,7 +64,7 @@ class WebAuthController extends Controller
     /**
      * After user signs in at Logto they are redirected back here.  This route should be configured in Logto's Application -> Redirect URI
      */
-    public function callback(Request $request): RedirectResponse
+    public function callback(Request $request, WebSessionScopes $sessionScopes): RedirectResponse
     {
         // Single use, whatever the outcome.
         $flow = $request->session()->pull(self::SESSION_KEY);
@@ -132,6 +133,10 @@ class WebAuthController extends Controller
         if (! $guard instanceof StatefulGuard) {
             throw new RuntimeException("Guard [{$guardName}] is not a session guard");
         }
+
+        // The session guard reloads the user from the database on later requests, so keep the granted scopes in
+        // the session. Stored before login(), whose Authenticated event restores them, so stale ones aren't applied.
+        $sessionScopes->remember($user, isset($claims['scope']) ? (string) $claims['scope'] : null);
 
         $guard->login($user);
 
