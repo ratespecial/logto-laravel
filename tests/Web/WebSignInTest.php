@@ -203,6 +203,7 @@ class WebSignInTest extends TestCase
             $this->assertSame('abc', $request['code']);
             $this->assertSame('the-verifier', $request['code_verifier']);
             $this->assertSame('https://app.example.com/logto/callback', $request['redirect_uri']);
+            $this->assertArrayNotHasKey('resource', $request->data());
 
             return true;
         });
@@ -400,6 +401,19 @@ class WebSignInTest extends TestCase
         $user = Auth::user();
         $this->assertInstanceOf(TestUser::class, $user);
         $this->assertTrue($user->hasOAuthScope('orders:read'));
+    }
+
+    public function testCodeExchangeNamesTheResource(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read']);
+
+        $this->withSession(['logto.web' => $this->flow()])->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        // Logto only issues a JWT for the resource when the token request names it too
+        Http::assertSent(function (Request $request) {
+            return $request->url() === self::ENDPOINT . '/oidc/token' && $request['resource'] === 'https://api.example.com';
+        });
     }
 
     public function testResourceWithEmptyScopeIsRefused(): void

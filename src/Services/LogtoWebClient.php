@@ -121,15 +121,23 @@ class LogtoWebClient
         $endpoint = $this->discovery->get()->token_endpoint
             ?? throw new OidcDiscoveryException('OIDC discovery document has no token_endpoint');
 
+        $params = [
+            'grant_type'    => 'authorization_code',
+            'code'          => $code,
+            'redirect_uri'  => $redirectUri,
+            'code_verifier' => $codeVerifier,
+        ];
+
+        // The resource has to be named here as well as in the authorization request (RFC 8707). Without it Logto
+        // issues its default opaque access token, only good for userinfo, instead of a JWT for the resource.
+        if ($this->requiresResource()) {
+            $params['resource'] = $this->resource;
+        }
+
         try {
             $response = Http::asForm()
                 ->withBasicAuth($this->appId, $this->appSecret)
-                ->post($endpoint, [
-                    'grant_type'    => 'authorization_code',
-                    'code'          => $code,
-                    'redirect_uri'  => $redirectUri,
-                    'code_verifier' => $codeVerifier,
-                ]);
+                ->post($endpoint, $params);
         } catch (ConnectionException $ex) {
             $detail = "token endpoint {$endpoint} unreachable: {$ex->getMessage()}";
             report(new RuntimeException($detail, previous: $ex));
