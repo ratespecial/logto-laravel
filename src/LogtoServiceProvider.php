@@ -39,6 +39,7 @@ class LogtoServiceProvider extends ServiceProvider
     {
         $this->routes();
         $this->migrations();
+        $this->views();
 
         // Configure Guard driver.  Must be configured to a guard in config/auth.php `guards`.
         // For use with `auth` middleware.
@@ -208,6 +209,19 @@ class LogtoServiceProvider extends ServiceProvider
         if ($this->app['config']->get('logto.mcp.routes')) {
             $this->loadRoutesFrom(__DIR__ . '/../routes/mcp-routes.php');
         }
+    }
+
+    /**
+     * Views under the `logto` namespace, e.g. the `<x-logto::sign-out>` component. Loaded even when the web routes
+     * are off, so using the component then fails with a clear "Route [logto.sign-out] not defined".
+     */
+    protected function views(): void
+    {
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'logto');
+
+        $this->publishes([
+            __DIR__ . '/../resources/views' => resource_path('views/vendor/logto'),
+        ], 'logto-views');
     }
 
     protected function migrations(): void

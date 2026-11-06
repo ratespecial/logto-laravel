@@ -34,6 +34,7 @@ Logto.io (OAuth/OIDC) support for Laravel. This package contributes three indepe
   - [Logto configuration (Traditional Web app)](#logto-configuration-traditional-web-app)
   - [Enable the routes](#enable-the-routes)
   - [Protecting pages](#protecting-pages)
+  - [Signing out](#signing-out)
   - [Behind a load balancer](#behind-a-load-balancer)
   - [Errors](#errors)
   - [Limiting who can sign in](#limiting-who-can-sign-in)
@@ -459,13 +460,88 @@ Use ordinary `auth` middleware and send guests to the sign-in route. In `bootstr
 })
 ```
 
-Laravel stores the requested URL as `url.intended`, and the callback redirects back to it. Sign out with a form (CSRF-protected POST):
-
-```blade
-<form method="POST" action="{{ route('logto.sign-out') }}">@csrf <button>Sign out</button></form>
-```
+Laravel stores the requested URL as `url.intended`, and the callback redirects back to it. To sign out, see [Signing out](#signing-out).
 
 `redirectGuestsTo` applies to every guest redirect. JSON/API requests still get a `401` because Laravel only redirects requests that expect HTML, so API-only routes using `auth:logto` are unaffected. If you have several HTML areas with different sign-in pages, pass a closure that inspects `$request` instead.
+
+### Signing out
+
+Sign-out links in your app go to **this package's route first**, never straight to Logto. The route ends the Laravel session, then sends the browser to Logto to end the Logto session, and Logto sends it back to your app.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant App as Laravel App
+    participant Logto
+
+    Browser->>App: POST /logto/sign-out (form with @csrf)
+    App->>App: guard logout(), invalidate session, regenerate CSRF token
+    App-->>Browser: 302 Logto end_session_endpoint (client_id, post_logout_redirect_uri)
+    Browser->>Logto: GET /oidc/session/end
+    Logto->>Logto: end the Logto session
+    Logto-->>Browser: 302 post_logout_redirect_uri
+    Browser->>App: GET LOGTO_WEB_REDIRECT_AFTER_LOGOUT (now a guest)
+```
+
+The order matters:
+
+- **Logto can't clear your session.** The Laravel session is a cookie on your domain. Sending the link to Logto first would end the Logto session but leave the user signed in to your app.
+- **Sign-out changes state, so it is a POST with a CSRF token.** A `GET` sign-out link can be triggered by an `<img>` on another site, by link prefetching, or by chat apps previewing the URL. The route only accepts `POST`.
+
+This is OpenID Connect *RP-Initiated Logout*: the **relying party** (RP, your app, which relies on Logto to authenticate users) starts the logout at the OpenID Provider (OP, Logto). See the [spec](https://openid.net/specs/openid-connect-rpinitiated-1_0.html).
+
+The package ships a `<x-logto::sign-out>` Blade component that renders the form for you:
+
+```blade
+@auth
+    <x-logto::sign-out />
+@endauth
+```
+
+It renders a `POST` form to `logto.sign-out` with `@csrf` and a plain **Sign out** button. Attributes go on the `<form>`, and the slot replaces the default button, so you can style it however you like:
+
+```blade
+<x-logto::sign-out class="inline">
+    <button type="submit" class="btn btn-link">Log out</button>
+</x-logto::sign-out>
+```
+
+To make it look like a link, style the button. Don't swap it for an `<a href>`.
+
+Inside a dropdown menu, a `<form>` can break the menu's markup. Render a hidden form once in the layout, then point any button at it with the HTML `form` attribute:
+
+```blade
+<x-logto::sign-out id="logto-sign-out" hidden />
+
+<ul class="dropdown-menu">
+    <li><button type="submit" form="logto-sign-out" class="dropdown-item">Sign out</button></li>
+</ul>
+```
+
+To change the component's markup, publish it to `resources/views/vendor/logto`:
+
+```bash
+php artisan vendor:publish --tag=logto-views
+```
+
+Without the component, the equivalent form is:
+
+```blade
+<form method="POST" action="{{ route('logto.sign-out') }}">
+    @csrf
+    <button type="submit">Sign out</button>
+</form>
+```
+
+Things to set up:
+
+- Register the absolute URL of `LOGTO_WEB_REDIRECT_AFTER_LOGOUT` as a **Post sign-out redirect URI** on the Logto application (see [Logto configuration](#logto-configuration-traditional-web-app)). Logto only redirects to registered URIs. Otherwise the user ends up on a Logto page instead of back in your app.
+- If Logto's discovery document has no `end_session_endpoint`, the route skips Logto and redirects straight to `LOGTO_WEB_REDIRECT_AFTER_LOGOUT`.
+
+Limitations:
+
+- The request to Logto sends `client_id` but not `id_token_hint`. The spec recommends the hint but doesn't require it.
+- Signing out of a *different* Logto app, or ending the Logto session some other way, does not end the Laravel session. That needs OIDC back-channel logout, which this package doesn't implement yet. The Laravel session lasts until it expires.
 
 ### Behind a load balancer
 
