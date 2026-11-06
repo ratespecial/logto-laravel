@@ -15,6 +15,7 @@ use Ratespecial\Logto\Exceptions\SignInException;
 use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\UserResolver;
 use Ratespecial\Logto\Services\WebSessionScopes;
+use Ratespecial\Logto\Support\Scopes;
 use RuntimeException;
 
 /**
@@ -194,9 +195,8 @@ class WebAuthController extends Controller
             throw new SignInException('You do not have access to this application');
         }
 
-        // Scopes are space-delimited (RFC 6749); array_filter drops empty entries from extra spaces.
         // Every required scope must be granted (level 3); extra granted scopes are fine.
-        $granted = array_filter(explode(' ', (string) $access['scope']));
+        $granted = Scopes::parse($access['scope']);
         if (array_diff($this->client->requiredScopes(), $granted) !== []) {
             throw new SignInException('You do not have access to this application');
         }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ratespecial\Logto;
 
 use Ratespecial\Logto\Contracts\OAuthScopable;
+use Ratespecial\Logto\Support\Scopes;
 
 /**
  * Attach to an Authenticatable model to allow for checking OAuth scopes.
@@ -31,11 +32,7 @@ trait HasOAuthScopes
      */
     public function setOAuthScopes(array|string $scopes): void
     {
-        if (is_string($scopes)) {
-            $scopes = array_filter(explode(' ', $scopes));
-        }
-
-        $this->oauthScopes = array_values($scopes);
+        $this->oauthScopes = Scopes::parse($scopes);
     }
 
     public function hasOAuthScope(string $scope): bool

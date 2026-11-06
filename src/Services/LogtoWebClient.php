@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Uri;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Exceptions\SignInException;
+use Ratespecial\Logto\Support\Scopes;
 use Throwable;
 
 /**
@@ -49,7 +50,7 @@ class LogtoWebClient
             $scopes = [...$scopes, ...$this->resourceScopes, ...$this->requiredScopes];
         }
 
-        return implode(' ', array_unique($scopes));
+        return implode(' ', Scopes::parse($scopes));
     }
 
     /**

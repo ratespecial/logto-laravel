@@ -79,4 +79,13 @@ class OauthProtectedResourceControllerTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('scopes_supported', ['mcp:use', 'read:foo', 'write:bar']);
     }
+
+    public function testEmptyScopesConfigAdvertisesNoScopes(): void
+    {
+        config(['logto.mcp.scopes-supported' => '']);
+
+        $this->getJson('/.well-known/oauth-protected-resource')
+            ->assertOk()
+            ->assertJsonPath('scopes_supported', []);
+    }
 }

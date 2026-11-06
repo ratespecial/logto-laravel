@@ -5,6 +5,7 @@ namespace Ratespecial\Logto\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
+use Ratespecial\Logto\Support\Scopes;
 
 /**
  * Returns metadata for Oauth protected resources.  This is used for MCP clients.
@@ -20,7 +21,7 @@ class OauthProtectedResourceController extends Controller
     public function __invoke(?string $path = ''): JsonResponse
     {
         $issuer          = $this->oidcDiscoveryService->get()->issuer;
-        $supportedScopes = explode(' ', config('logto.mcp.scopes-supported'));
+        $supportedScopes = Scopes::parse(config('logto.mcp.scopes-supported'));
 
         return response()->json([
             // MCP clients such as Claude expect this to match the URL of the MCP server they're requesting from.

@@ -7,6 +7,7 @@ namespace Ratespecial\Logto\Services;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Session\Session;
 use Ratespecial\Logto\Contracts\OAuthScopable;
+use Ratespecial\Logto\Support\Scopes;
 
 /**
  * Keeps the scopes granted at web sign-in for the rest of the Laravel session.
@@ -33,7 +34,7 @@ class WebSessionScopes
      */
     public function remember(Authenticatable $user, ?string $scope): void
     {
-        $scopes = array_values(array_filter(explode(' ', (string) $scope)));
+        $scopes = Scopes::parse($scope);
 
         if ($scopes === []) {
             $this->forget();
@@ -63,7 +64,7 @@ class WebSessionScopes
             return;
         }
 
-        $user->setOAuthScopes(array_values(array_filter((array) ($stored['scopes'] ?? []), 'is_string')));
+        $user->setOAuthScopes(Scopes::parse($stored['scopes'] ?? null));
     }
 
     public function forget(): void

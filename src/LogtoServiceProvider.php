@@ -15,6 +15,7 @@ use Ratespecial\Logto\Services\LogtoWebClient;
 use Ratespecial\Logto\Services\OidcDiscoveryService;
 use Ratespecial\Logto\Services\UserResolver;
 use Ratespecial\Logto\Services\WebSessionScopes;
+use Ratespecial\Logto\Support\Scopes;
 use Ratespecial\Logto\Testing\FakeOidcDiscoveryService;
 use Ratespecial\Logto\Testing\LogtoFake;
 use RuntimeException;
@@ -153,8 +154,8 @@ class LogtoServiceProvider extends ServiceProvider
             }
 
             $resource       = ((string) $config['resource']) ?: null;
-            $resourceScopes = self::scopeList($config['resource-scopes']);
-            $requiredScopes = self::scopeList($config['required-scopes']);
+            $resourceScopes = Scopes::parse($config['resource-scopes']);
+            $requiredScopes = Scopes::parse($config['required-scopes']);
 
             // Resource scopes are permissions on the resource, so they mean nothing without one.
             if ($resource === null && ($resourceScopes !== [] || $requiredScopes !== [])) {
@@ -175,26 +176,12 @@ class LogtoServiceProvider extends ServiceProvider
                 discovery: $app->make(OidcDiscoveryService::class),
                 appId: $config['app-id'],
                 appSecret: $config['app-secret'],
-                oidcScopes: self::scopeList($config['oidc-scopes']),
+                oidcScopes: Scopes::parse($config['oidc-scopes']),
                 resource: $resource,
                 resourceScopes: $resourceScopes,
                 requiredScopes: $requiredScopes,
             );
         });
-    }
-
-    /**
-     * Split a space-delimited scope string from config, dropping empty entries and duplicates.
-     *
-     * @return list<string>
-     */
-    private static function scopeList(mixed $scopes): array
-    {
-        $parts    = explode(' ', (string) $scopes);
-        $nonEmpty = array_filter($parts);         // Drops blanks from repeated spaces or an unset value
-        $unique   = array_unique($nonEmpty);
-
-        return array_values($unique);             // Re-index so the result is a list
     }
 
     /**
