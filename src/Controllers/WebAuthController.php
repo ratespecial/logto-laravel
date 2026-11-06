@@ -72,8 +72,18 @@ class WebAuthController extends Controller
 
         // CSRF protection: the state must match the one signIn() stored in this session. A missing flow means
         // the callback was hit without going through signIn() first, or the session expired / was already used.
-        if (! is_array($flow) || ! hash_equals($flow['state'], (string) $request->query('state'))) {
-            throw new SignInException('Sign-in failed: invalid or expired state. Please try again.');
+        if (! is_array($flow)) {
+            throw new SignInException(
+                'Sign-in failed: invalid or expired state. Please try again.',
+                detail: 'no sign-in flow in session (expired, already used, or signIn() skipped)',
+            );
+        }
+
+        if (! hash_equals($flow['state'], (string) $request->query('state'))) {
+            throw new SignInException(
+                'Sign-in failed: invalid or expired state. Please try again.',
+                detail: 'state parameter does not match',
+            );
         }
 
         // Logto reports failures (e.g. user cancelled, access_denied) as error params instead of a code.
@@ -119,7 +129,7 @@ class WebAuthController extends Controller
         } catch (DuplicateUserEmailException $ex) {
             report($ex);
 
-            throw new SignInException('Sign-in failed: an account with this email already exists. Contact an administrator.', $ex);
+            throw new SignInException('Sign-in failed: an account with this email already exists. Contact an administrator.', $ex, $ex->getMessage());
         }
 
         // UserResolver returns null when the email claim is empty and no existing row matches the subject.
@@ -177,7 +187,10 @@ class WebAuthController extends Controller
     {
         // A resource was requested in the authorization URL, so Logto should have issued an access token for it.
         if (empty($tokens['access_token'])) {
-            throw new SignInException('Sign-in failed: no access token returned');
+            $detail = 'token response has no access_token although logto.web.resource is set';
+            report(new RuntimeException($detail));
+
+            throw new SignInException('Sign-in failed: no access token returned', detail: $detail);
         }
 
         // Checks signature, issuer and that the audience is the configured resource (not the app ID).
@@ -192,13 +205,20 @@ class WebAuthController extends Controller
         // Logto only returns requested permissions the user holds, so an empty scope means the user holds none
         // of them (level 2: any one is enough).
         if (empty($access['scope'])) {
-            throw new SignInException('You do not have access to this application');
+            throw new SignInException(
+                'You do not have access to this application',
+                detail: "user holds none of the requested scopes on [{$this->client->resource()}]: "
+                    . implode(' ', $this->client->resourceScopes()),
+            );
         }
 
         // Every required scope must be granted (level 3); extra granted scopes are fine.
-        $granted = Scopes::parse($access['scope']);
-        if (array_diff($this->client->requiredScopes(), $granted) !== []) {
-            throw new SignInException('You do not have access to this application');
+        $missing = array_diff($this->client->requiredScopes(), Scopes::parse($access['scope']));
+        if ($missing !== []) {
+            throw new SignInException(
+                'You do not have access to this application',
+                detail: 'missing required scopes: ' . implode(' ', $missing),
+            );
         }
 
         // ID tokens don't carry API scopes; copy them over so UserResolver can set them on OAuthScopable users.

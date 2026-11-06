@@ -185,6 +185,13 @@ class LogtoTokenValidatorTest extends TestCase
         (new LogtoTokenValidator($discovery, self::AUDIENCE))->validate($token);
     }
 
+    public function testIsJwtRecognisesThreeSegmentTokens(): void
+    {
+        $this->assertTrue(LogtoTokenValidator::isJwt('header.payload.signature'));
+        $this->assertFalse(LogtoTokenValidator::isJwt('abc123plaintextapitoken'));
+        $this->assertFalse(LogtoTokenValidator::isJwt('a.b'));
+    }
+
     public function testRejectsOpaqueTokenAsTokenValidationException(): void
     {
         $this->expectException(TokenValidationException::class);

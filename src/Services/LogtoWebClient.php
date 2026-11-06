@@ -11,6 +11,7 @@ use Illuminate\Support\Uri;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Exceptions\SignInException;
 use Ratespecial\Logto\Support\Scopes;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -51,6 +52,24 @@ class LogtoWebClient
         }
 
         return implode(' ', Scopes::parse($scopes));
+    }
+
+    /**
+     * The API resource an access token is requested for, or null for ID token only.
+     */
+    public function resource(): ?string
+    {
+        return $this->requiresResource() ? $this->resource : null;
+    }
+
+    /**
+     * Permissions requested on the resource: the resource scopes plus the required ones.
+     *
+     * @return list<string>
+     */
+    public function resourceScopes(): array
+    {
+        return Scopes::parse([...$this->resourceScopes, ...$this->requiredScopes]);
     }
 
     /**
@@ -112,11 +131,19 @@ class LogtoWebClient
                     'code_verifier' => $codeVerifier,
                 ]);
         } catch (ConnectionException $ex) {
-            throw new SignInException('Could not reach the sign-in service', $ex);
+            $detail = "token endpoint {$endpoint} unreachable: {$ex->getMessage()}";
+            report(new RuntimeException($detail, previous: $ex));
+
+            throw new SignInException('Could not reach the sign-in service', $ex, $detail);
         }
 
-        if (! $response->successful() || ! is_array($tokens = $response->json()) || empty($tokens['id_token'])) {
-            throw new SignInException('Sign-in failed: the authorization code could not be exchanged');
+        $tokens = $response->json();
+
+        if (! $response->successful() || ! is_array($tokens) || empty($tokens['id_token'])) {
+            $detail = $response->successful() ? 'token response has no id_token' : self::tokenErrorDetail($response->status(), $tokens);
+            report(new RuntimeException($detail));
+
+            throw new SignInException('Sign-in failed: the authorization code could not be exchanged', detail: $detail);
         }
 
         return $tokens;
@@ -138,7 +165,7 @@ class LogtoWebClient
         } catch (OidcDiscoveryException $ex) {
             throw $ex;
         } catch (Throwable $ex) {
-            throw new SignInException('Sign-in failed: invalid ID token', $ex);
+            throw new SignInException('Sign-in failed: invalid ID token', $ex, $ex->getMessage());
         }
 
         if (! is_string($claims['nonce'] ?? null) || ! hash_equals($nonce, $claims['nonce'])) {
@@ -158,6 +185,16 @@ class LogtoWebClient
      */
     public function validateAccessToken(string $accessToken): array
     {
+        // Logto issues an opaque token (only good for the userinfo endpoint) when it didn't issue one for the
+        // API resource. That's a configuration problem rather than a bad token, so it gets its own message.
+        if (! LogtoTokenValidator::isJwt($accessToken)) {
+            $detail = "Logto returned an opaque access token, not a JWT; check logto.web.resource [{$this->resource}] "
+                . 'matches an API resource indicator in Logto';
+            report(new RuntimeException($detail));
+
+            throw new SignInException('Sign-in failed: the sign-in service is misconfigured. Contact an administrator.', detail: $detail);
+        }
+
         try {
             $logtoTokenValidator = new LogtoTokenValidator($this->discovery, (string) $this->resource);
 
@@ -165,7 +202,7 @@ class LogtoWebClient
         } catch (OidcDiscoveryException $ex) {
             throw $ex;
         } catch (Throwable $ex) {
-            throw new SignInException('Sign-in failed: invalid access token', $ex);
+            throw new SignInException('Sign-in failed: invalid access token', $ex, $ex->getMessage());
         }
     }
 
@@ -192,6 +229,26 @@ class LogtoWebClient
                 'post_logout_redirect_uri' => $postLogoutRedirectUri,
             ])
             ->value();
+    }
+
+    /**
+     * Describes a failed token response using only the OAuth error fields (RFC 6749 §5.2), never the raw body.
+     */
+    private static function tokenErrorDetail(int $status, mixed $body): string
+    {
+        $detail = "token endpoint returned HTTP {$status}";
+
+        if (! is_array($body)) {
+            return $detail;
+        }
+
+        foreach (['error', 'error_description'] as $field) {
+            if (is_string($body[$field] ?? null) && $body[$field] !== '') {
+                $detail .= ": {$body[$field]}";
+            }
+        }
+
+        return $detail;
     }
 
     /**

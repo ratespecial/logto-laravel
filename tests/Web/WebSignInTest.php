@@ -13,6 +13,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -61,6 +62,8 @@ class WebSignInTest extends TestCase
             'prefix'   => '',
         ]);
         $app['config']->set('app.url', 'https://app.example.com');
+        // SignInException adds developer detail in debug mode; tests opt in where they check it.
+        $app['config']->set('app.debug', false);
         $app['config']->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
         $app['config']->set('auth.providers.users.model', TestUser::class);
         $app['config']->set('logto.endpoint', self::ENDPOINT);
@@ -555,6 +558,84 @@ class WebSignInTest extends TestCase
         $this->assertGuest();
     }
 
+    public function testOpaqueAccessTokenIsReportedAsMisconfiguration(): void
+    {
+        Exceptions::fake();
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
+        $this->fakeLogto(opaqueAccessToken: 'opaque-random-string');
+
+        $response = $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $response->assertForbidden();
+        $this->assertSame(
+            'Sign-in failed: the sign-in service is misconfigured. Contact an administrator.',
+            $response->exception?->getMessage(),
+        );
+        $this->assertGuest();
+        Exceptions::assertReported(fn (RuntimeException $ex) => str_contains($ex->getMessage(), 'opaque access token'));
+    }
+
+    public function testOpaqueAccessTokenDetailIsShownInDebugMode(): void
+    {
+        config([
+            'app.debug'                 => true,
+            'logto.web.resource'        => 'https://api.example.com',
+            'logto.web.resource-scopes' => 'orders:read',
+        ]);
+        $this->fakeLogto(opaqueAccessToken: 'opaque-random-string');
+
+        $response = $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $response->assertForbidden();
+        $message = (string) $response->exception?->getMessage();
+        $this->assertStringContainsString('opaque access token', $message);
+        $this->assertStringContainsString('[https://api.example.com]', $message);
+    }
+
+    public function testFailedTokenExchangeDetailIsShownInDebugMode(): void
+    {
+        Exceptions::fake();
+        config(['app.debug' => true]);
+        $this->fakeLogto(tokenStatus: 400);
+
+        $response = $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $response->assertForbidden();
+        $this->assertStringContainsString('token endpoint returned HTTP 400: invalid_grant', (string) $response->exception?->getMessage());
+        Exceptions::assertReported(RuntimeException::class);
+    }
+
+    public function testMissingRequiredScopeDetailIsShownInDebugMode(): void
+    {
+        config([
+            'app.debug'                 => true,
+            'logto.web.resource'        => 'https://api.example.com',
+            'logto.web.required-scopes' => 'orders:admin orders:read',
+        ]);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read']);
+
+        $response = $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $response->assertForbidden();
+        $this->assertStringContainsString('missing required scopes: orders:admin', (string) $response->exception?->getMessage());
+    }
+
+    public function testStateFailureDetailsDistinguishMissingFlowFromMismatchInDebugMode(): void
+    {
+        config(['app.debug' => true]);
+
+        $missing = $this->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+        $this->assertStringContainsString('no sign-in flow in session', (string) $missing->exception?->getMessage());
+
+        $mismatch = $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=forged');
+        $this->assertStringContainsString('state parameter does not match', (string) $mismatch->exception?->getMessage());
+    }
+
     public function testSignOutLogsOutAndRedirectsToLogtoEndSession(): void
     {
         config(['logto.web.redirect-after-logout' => '/admin/login']);
@@ -629,6 +710,7 @@ class WebSignInTest extends TestCase
         int $tokenStatus = 200,
         ?string $signingKey = null,
         array $discoveryOverrides = [],
+        ?string $opaqueAccessToken = null,
     ): void {
         $signingKey ??= $this->privateKey;
 
@@ -649,6 +731,9 @@ class WebSignInTest extends TestCase
                 'sub' => 'web-user',
                 'exp' => time() + 600,
             ], $accessClaims), $signingKey, 'RS256', self::KID);
+        }
+        if ($opaqueAccessToken !== null) {
+            $tokens['access_token'] = $opaqueAccessToken;
         }
 
         Http::fake([

@@ -29,7 +29,7 @@ class LogtoTokenValidator
     public function validate(string $token): array
     {
         // Opaque bearer tokens (e.g. a legacy api_token behind `auth:logto,api`) aren't JWTs; let the next guard handle them.
-        if (substr_count($token, '.') !== 2) {
+        if (! self::isJwt($token)) {
             throw new TokenValidationException('Not a JWT');
         }
 
@@ -53,6 +53,14 @@ class LogtoTokenValidator
         }
 
         return $payload;
+    }
+
+    /**
+     * Whether the token has the three-segment JWT shape. Opaque tokens (Logto's userinfo tokens, legacy API tokens) don't.
+     */
+    public static function isJwt(string $token): bool
+    {
+        return substr_count($token, '.') === 2;
     }
 
     /**

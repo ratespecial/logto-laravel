@@ -563,6 +563,8 @@ $exceptions->render(fn (SignInException $e) => redirect('/')->withErrors(['logto
 
 A misconfigured tenant (unreachable discovery document, missing app ID/secret) throws the usual exception, like the API guard.
 
+Many failures also carry a developer-facing `$e->detail`, such as which scopes were missing, why the ID token was rejected, or the token endpoint's OAuth error. With `APP_DEBUG=true` the detail is appended to the message, so it shows on the 403 page. Otherwise the message stays generic. `$e->detail` is always available to a custom renderer. Laravel doesn't log `HttpException`s, so failures an administrator has to fix are reported separately as a `RuntimeException`: the token endpoint being unreachable or rejecting the code, no access token being returned for the resource, or Logto returning an opaque access token instead of a JWT (usually `LOGTO_WEB_RESOURCE` doesn't match an API resource indicator in Logto).
+
 ### Limiting who can sign in
 
 There are three levels of access control. Each one builds on the previous, so start with the simplest that fits. (See [docs/tokens.md](docs/tokens.md) for the difference between the ID token and access token involved.)
