@@ -87,6 +87,7 @@ LOGTO_WEB_APP_SECRET=your-app-secret
 | `LOGTO_WEB_MIDDLEWARE` | `logto.web.middleware` | `web` | Comma-delimited middleware for the routes. Must include sessions. |
 | `LOGTO_WEB_SCOPES` | `logto.web.scopes` | `openid profile email` | Space-delimited scopes requested. |
 | `LOGTO_WEB_RESOURCE` | `logto.web.resource` | — | Optional API resource; when set the user needs at least one scope on it. |
+| `LOGTO_WEB_REQUIRED_SCOPES` | `logto.web.required-scopes` | — | Optional space-delimited scopes the user must all hold on `LOGTO_WEB_RESOURCE`. Empty means any scope. |
 | `LOGTO_WEB_REDIRECT_AFTER_LOGIN` | `logto.web.redirect-after-login` | `/` | Fallback destination when there is no intended URL. |
 | `LOGTO_WEB_REDIRECT_AFTER_LOGOUT` | `logto.web.redirect-after-logout` | `/` | Where Logto sends the browser after sign-out. |
 
@@ -451,7 +452,7 @@ A misconfigured tenant (unreachable discovery document, missing app ID/secret) t
 
 ### Limiting who can sign in
 
-As with the API guard, any Logto user who can sign in to the application is provisioned. To restrict access, either gate on your own data (for example an `is_admin` column and middleware, as before), or set `LOGTO_WEB_RESOURCE` to an API resource and grant its scopes only to the right Logto roles: the callback requests an access token for that resource, validates it, and refuses sign-in when its `scope` is empty. The scopes are attached to the user for that request only; they are not persisted in the session.
+As with the API guard, any Logto user who can sign in to the application is provisioned. To restrict access, either gate on your own data (for example an `is_admin` column and middleware, as before), or set `LOGTO_WEB_RESOURCE` to an API resource and grant its scopes only to the right Logto roles: the callback requests an access token for that resource, validates it, and refuses sign-in when its `scope` is empty. To require particular permissions rather than any, list them in `LOGTO_WEB_REQUIRED_SCOPES` (for example `orders:admin`); the user must hold every one, matched exactly. Setting it without `LOGTO_WEB_RESOURCE` is a configuration error. The scopes are attached to the user for that request only; they are not persisted in the session.
 
 ---
 

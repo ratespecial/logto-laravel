@@ -99,6 +99,12 @@ return [
          */
         'resource' => env('LOGTO_WEB_RESOURCE'),
 
+        /*
+         * Optional space-delimited scopes the user must hold on the resource above, all of them, or sign-in is
+         * refused.  Empty means any scope will do.  Requires a resource.
+         */
+        'required-scopes' => env('LOGTO_WEB_REQUIRED_SCOPES', ''),
+
         // Where to go after signing in when there is no intended URL, and after signing out.  Paths or absolute URLs.
         'redirect-after-login'  => env('LOGTO_WEB_REDIRECT_AFTER_LOGIN', '/'),
         'redirect-after-logout' => env('LOGTO_WEB_REDIRECT_AFTER_LOGOUT', '/'),

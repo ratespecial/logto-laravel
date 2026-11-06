@@ -127,7 +127,8 @@ class WebAuthController extends Controller
     }
 
     /**
-     * When an API resource is configured the user must hold at least one scope on it; that's the access gate.
+     * When an API resource is configured the user must hold at least one scope on it, and every scope in
+     * logto.web.required-scopes; that's the access gate.
      * The access token's scope is merged into the claims so it reaches the user model.
      *
      * @param  array<string, mixed>  $claims
@@ -147,6 +148,12 @@ class WebAuthController extends Controller
         }
 
         if (empty($access['scope'])) {
+            throw new SignInException('You do not have access to this application');
+        }
+
+        $granted  = array_filter(explode(' ', (string) $access['scope']));
+        $required = array_filter(explode(' ', (string) config('logto.web.required-scopes')));
+        if (array_diff($required, $granted) !== []) {
             throw new SignInException('You do not have access to this application');
         }
 

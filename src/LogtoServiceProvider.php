@@ -121,6 +121,10 @@ class LogtoServiceProvider extends ServiceProvider
                 throw new RuntimeException('Logto web app id/secret are not configured');
             }
 
+            if (! empty($config['required-scopes']) && empty($config['resource'])) {
+                throw new RuntimeException('Logto web required scopes need a resource (LOGTO_WEB_RESOURCE)');
+            }
+
             return new LogtoWebClient(
                 discovery: $app->make(OidcDiscoveryService::class),
                 appId: $config['app-id'],

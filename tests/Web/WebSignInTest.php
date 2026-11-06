@@ -17,6 +17,7 @@ use Orchestra\Testbench\TestCase;
 use Ratespecial\Logto\Events\UserProvisionedEvent;
 use Ratespecial\Logto\LogtoServiceProvider;
 use Ratespecial\Logto\Services\LogtoWebClient;
+use RuntimeException;
 use Tests\Ratespecial\Logto\Fixtures\TestUser;
 
 class WebSignInTest extends TestCase
@@ -371,6 +372,52 @@ class WebSignInTest extends TestCase
 
         $this->assertGuest();
         $this->assertSame(0, TestUser::query()->count());
+    }
+
+    public function testRequiredScopesAllPresentSignsIn(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.required-scopes' => 'orders:admin orders:read']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read orders:write orders:admin']);
+
+        $this->withSession(['logto.web' => $this->flow()])->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $this->assertAuthenticated();
+    }
+
+    public function testMissingRequiredScopeIsRefused(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.required-scopes' => 'orders:admin orders:read']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read orders:write']);
+
+        $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state')
+            ->assertForbidden();
+
+        $this->assertGuest();
+        $this->assertSame(0, TestUser::query()->count());
+    }
+
+    public function testRequiredScopeIsMatchedExactly(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.required-scopes' => 'orders:admin']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:administrator']);
+
+        $this->withSession(['logto.web' => $this->flow()])
+            ->get('https://app.example.com/logto/callback?code=abc&state=the-state')
+            ->assertForbidden();
+
+        $this->assertGuest();
+    }
+
+    public function testRequiredScopesWithoutResourceIsAConfigurationError(): void
+    {
+        config(['logto.web.required-scopes' => 'orders:admin']);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('LOGTO_WEB_RESOURCE');
+
+        $this->get('https://app.example.com/logto/sign-in');
     }
 
     public function testResourceWithoutAccessTokenIsRefused(): void
