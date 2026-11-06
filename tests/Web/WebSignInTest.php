@@ -126,13 +126,32 @@ class WebSignInTest extends TestCase
 
     public function testSignInRequestsConfiguredResource(): void
     {
-        config(['logto.web.resource' => 'https://api.example.com']);
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
         $this->fakeLogto();
 
-        $url = (string) $this->get('https://app.example.com/logto/sign-in')->headers->get('Location');
-
-        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        $query = $this->signInQuery();
         $this->assertSame('https://api.example.com', $query['resource']);
+    }
+
+    public function testSignInRequestsOidcResourceAndRequiredScopesWithoutDuplicates(): void
+    {
+        config([
+            'logto.web.oidc-scopes'     => 'openid email',
+            'logto.web.resource'        => 'https://api.example.com',
+            'logto.web.resource-scopes' => 'orders:read orders:write',
+            'logto.web.required-scopes' => 'orders:admin orders:read',
+        ]);
+        $this->fakeLogto();
+
+        $this->assertSame('openid email orders:read orders:write orders:admin', $this->signInQuery()['scope']);
+    }
+
+    public function testSignInUsesConfiguredOidcScopes(): void
+    {
+        config(['logto.web.oidc-scopes' => 'openid profile']);
+        $this->fakeLogto();
+
+        $this->assertSame('openid profile', $this->signInQuery()['scope']);
     }
 
     public function testCallbackProvisionsUserLogsInAndRedirectsToIntendedUrl(): void
@@ -351,7 +370,7 @@ class WebSignInTest extends TestCase
 
     public function testResourceRequiresAccessTokenWithScope(): void
     {
-        config(['logto.web.resource' => 'https://api.example.com']);
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
         $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:read']);
 
         $this->withSession(['logto.web' => $this->flow()])->get('https://app.example.com/logto/callback?code=abc&state=the-state');
@@ -363,7 +382,7 @@ class WebSignInTest extends TestCase
 
     public function testResourceWithEmptyScopeIsRefused(): void
     {
-        config(['logto.web.resource' => 'https://api.example.com']);
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
         $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => '']);
 
         $this->withSession(['logto.web' => $this->flow()])
@@ -420,9 +439,41 @@ class WebSignInTest extends TestCase
         $this->get('https://app.example.com/logto/sign-in');
     }
 
-    public function testResourceWithoutAccessTokenIsRefused(): void
+    public function testResourceScopesWithoutResourceIsAConfigurationError(): void
+    {
+        config(['logto.web.resource-scopes' => 'orders:read']);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('LOGTO_WEB_RESOURCE');
+
+        $this->get('https://app.example.com/logto/sign-in');
+    }
+
+    public function testResourceWithoutAnyScopesIsAConfigurationError(): void
     {
         config(['logto.web.resource' => 'https://api.example.com']);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('LOGTO_WEB_RESOURCE_SCOPES');
+
+        $this->get('https://app.example.com/logto/sign-in');
+    }
+
+    public function testRequiredScopesAloneSignIn(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.required-scopes' => 'orders:admin']);
+        $this->fakeLogto(accessClaims: ['aud' => 'https://api.example.com', 'scope' => 'orders:admin']);
+
+        $this->withSession(['logto.web' => $this->flow()])->get('https://app.example.com/logto/callback?code=abc&state=the-state');
+
+        $this->assertAuthenticated();
+    }
+
+    public function testResourceWithoutAccessTokenIsRefused(): void
+    {
+        config(['logto.web.resource' => 'https://api.example.com', 'logto.web.resource-scopes' => 'orders:read']);
         $this->fakeLogto();
 
         $this->withSession(['logto.web' => $this->flow()])
@@ -466,6 +517,17 @@ class WebSignInTest extends TestCase
         $this->assertSame('/logto/sign-in', route('logto.sign-in', absolute: false));
         $this->assertSame('/logto/callback', route('logto.callback', absolute: false));
         $this->assertSame('/logto/sign-out', route('logto.sign-out', absolute: false));
+    }
+
+    /**
+     * @return array<string, string> Query parameters of the authorization URL that sign-in redirects to.
+     */
+    private function signInQuery(): array
+    {
+        $url = (string) $this->get('https://app.example.com/logto/sign-in')->headers->get('Location');
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+        return $query;
     }
 
     /**

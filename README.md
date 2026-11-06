@@ -30,12 +30,16 @@ Logto.io (OAuth/OIDC) support for Laravel. This package contributes three indepe
   - [Protecting an `Mcp::web` server with the Logto guard](#protecting-an-mcpweb-server-with-the-logto-guard)
   - [Adding the MCP server to Claude Code](#adding-the-mcp-server-to-claude-code)
 - [Feature 3 — Web sign-in (Authorization Code + PKCE)](#feature-3--web-sign-in-authorization-code--pkce)
+  - [How the routes are registered](#how-the-routes-are-registered)
   - [Logto configuration (Traditional Web app)](#logto-configuration-traditional-web-app)
   - [Enable the routes](#enable-the-routes)
   - [Protecting pages](#protecting-pages)
   - [Behind a load balancer](#behind-a-load-balancer)
   - [Errors](#errors)
   - [Limiting who can sign in](#limiting-who-can-sign-in)
+    - [1. Anyone who can sign in (default)](#1-anyone-who-can-sign-in-default)
+    - [2. Require any of a set of permissions](#2-require-any-of-a-set-of-permissions)
+    - [3. Require specific permissions](#3-require-specific-permissions)
 - [Testing your app](#testing-your-app)
 - [Development](#development)
 - [License](#license)
@@ -85,9 +89,10 @@ LOGTO_WEB_APP_SECRET=your-app-secret
 | `LOGTO_WEB_PREFIX` | `logto.web.prefix` | `logto` | URL prefix for the routes. |
 | `LOGTO_WEB_GUARD` | `logto.web.guard` | `web` | Session guard users are logged in to. |
 | `LOGTO_WEB_MIDDLEWARE` | `logto.web.middleware` | `web` | Comma-delimited middleware for the routes. Must include sessions. |
-| `LOGTO_WEB_SCOPES` | `logto.web.scopes` | `openid profile email` | Space-delimited scopes requested. |
-| `LOGTO_WEB_RESOURCE` | `logto.web.resource` | — | Optional API resource; when set the user needs at least one scope on it. |
-| `LOGTO_WEB_REQUIRED_SCOPES` | `logto.web.required-scopes` | — | Optional space-delimited scopes the user must all hold on `LOGTO_WEB_RESOURCE`. Empty means any scope. |
+| `LOGTO_WEB_OIDC_SCOPES` | `logto.web.oidc-scopes` | `openid profile email` | Space-delimited OIDC scopes. Control which user claims the ID token carries; grant no access. |
+| `LOGTO_WEB_RESOURCE` | `logto.web.resource` | — | Optional API resource to also request an access token for. Needs resource or required scopes. See [Limiting who can sign in](#limiting-who-can-sign-in). |
+| `LOGTO_WEB_RESOURCE_SCOPES` | `logto.web.resource-scopes` | — | Optional space-delimited permissions on `LOGTO_WEB_RESOURCE` to request. Holding any one is enough. |
+| `LOGTO_WEB_REQUIRED_SCOPES` | `logto.web.required-scopes` | — | Optional space-delimited permissions on `LOGTO_WEB_RESOURCE` the user must all hold. Requested automatically. |
 | `LOGTO_WEB_REDIRECT_AFTER_LOGIN` | `logto.web.redirect-after-login` | `/` | Fallback destination when there is no intended URL. |
 | `LOGTO_WEB_REDIRECT_AFTER_LOGOUT` | `logto.web.redirect-after-logout` | `/` | Where Logto sends the browser after sign-out. |
 
@@ -368,11 +373,13 @@ The discovery handshake then kicks in automatically — Claude Code hits `/mcp`,
 
 For Blade/server-rendered apps (for example an admin portal). The package adds three routes that send the browser to Logto, handle the callback and log the user in to a **normal Laravel session guard**, so `auth` middleware, `Auth::user()` and `@auth` keep working. The user is resolved exactly like the API guard does: lookup by `logto.subject-column`, optional [link by email](#migrating-logto-tenants), claim mapping and `UserProvisionedEvent`.
 
-| Route | Name | Purpose |
-| --- | --- | --- |
-| `GET /{prefix}/sign-in` | `logto.sign-in` | Stores state, nonce and PKCE verifier in the session and redirects to Logto. |
-| `GET /{prefix}/callback` | `logto.callback` | Verifies state, exchanges the code (client secret via HTTP Basic), validates the ID token (signature, `iss`, `aud` = app ID, `exp`, `nonce`), logs the user in, regenerates the session and redirects to the intended URL. |
-| `POST /{prefix}/sign-out` | `logto.sign-out` | Logs out, invalidates the session and redirects to Logto's `end_session_endpoint` (falling back to a local redirect). |
+All three routes are handled by `Ratespecial\Logto\Controllers\WebAuthController`:
+
+| Route | Name | Controller method | Purpose |
+| --- | --- | --- | --- |
+| `GET /{prefix}/sign-in` | `logto.sign-in` | `signIn()` | Stores state, nonce and PKCE verifier in the session and redirects to Logto. |
+| `GET /{prefix}/callback` | `logto.callback` | `callback()` | Verifies state, exchanges the code (client secret via HTTP Basic), validates the ID token (signature, `iss`, `aud` = app ID, `exp`, `nonce`), optionally [checks API resource scopes](#limiting-who-can-sign-in), logs the user in, regenerates the session and redirects to the intended URL. |
+| `POST /{prefix}/sign-out` | `logto.sign-out` | `signOut()` | Logs out, invalidates the session and redirects to Logto's `end_session_endpoint` (falling back to a local redirect). |
 
 ```mermaid
 sequenceDiagram
@@ -392,6 +399,36 @@ sequenceDiagram
     App->>App: validate ID token, resolve user, Auth::login()
     App-->>Browser: 302 intended URL
 ```
+
+### How the routes are registered
+
+`LogtoServiceProvider::boot()` calls `routes()`, which loads `routes/web-routes.php` only when `logto.web.routes` is true. That file wraps the three routes in the configured middleware and prefix:
+
+```php
+Route::middleware(array_filter(explode(',', (string) config('logto.web.middleware'))))
+    ->prefix(config('logto.web.prefix'))
+    ->group(function () {
+        Route::get('sign-in', [WebAuthController::class, 'signIn'])->name('logto.sign-in');
+        Route::get('callback', [WebAuthController::class, 'callback'])->name('logto.callback');
+        Route::post('sign-out', [WebAuthController::class, 'signOut'])->name('logto.sign-out');
+    });
+```
+
+| Env var | Config key | Default | Effect on the routes |
+| --- | --- | --- | --- |
+| `LOGTO_WEB_ROUTES` | `logto.web.routes` | `false` | Registers the routes at all. When false, none of them exist. |
+| `LOGTO_WEB_PREFIX` | `logto.web.prefix` | `logto` | URL prefix, giving `/logto/sign-in`, `/logto/callback` and `/logto/sign-out`. |
+| `LOGTO_WEB_MIDDLEWARE` | `logto.web.middleware` | `web` | Comma-delimited middleware applied to the group. It must start a session, because state, nonce and verifier are stored there. |
+
+The controller's dependency, `LogtoWebClient`, is bound in the provider's `register()` from the rest of `logto.web.*` (app ID, secret, scopes, resource). Resolving it throws a `RuntimeException` when:
+
+- the app ID or secret is missing,
+- `LOGTO_WEB_RESOURCE_SCOPES` or `LOGTO_WEB_REQUIRED_SCOPES` is set without `LOGTO_WEB_RESOURCE`, or
+- `LOGTO_WEB_RESOURCE` is set with neither of them, so no permission would ever be requested and every sign-in would be refused.
+
+It is resolved when the controller is built, so a misconfiguration shows up on the first request to any of these routes, not at boot.
+
+If you use `php artisan config:cache` or `route:cache`, run them again after changing these variables.
 
 ### Logto configuration (Traditional Web app)
 
@@ -452,7 +489,102 @@ A misconfigured tenant (unreachable discovery document, missing app ID/secret) t
 
 ### Limiting who can sign in
 
-As with the API guard, any Logto user who can sign in to the application is provisioned. To restrict access, either gate on your own data (for example an `is_admin` column and middleware, as before), or set `LOGTO_WEB_RESOURCE` to an API resource and grant its scopes only to the right Logto roles: the callback requests an access token for that resource, validates it, and refuses sign-in when its `scope` is empty. To require particular permissions rather than any, list them in `LOGTO_WEB_REQUIRED_SCOPES` (for example `orders:admin`); the user must hold every one, matched exactly. Setting it without `LOGTO_WEB_RESOURCE` is a configuration error. The scopes are attached to the user for that request only; they are not persisted in the session.
+There are three levels of access control. Each one builds on the previous, so start with the simplest that fits. (See [docs/tokens.md](docs/tokens.md) for the difference between the ID token and access token involved.)
+
+| Level | Set | Who gets a session |
+| --- | --- | --- |
+| 1 | Nothing (default) | Anyone who can sign in to the Logto app |
+| 2 | `LOGTO_WEB_RESOURCE` + `LOGTO_WEB_RESOURCE_SCOPES` | Users holding **at least one** of the listed permissions |
+| 3 | `LOGTO_WEB_RESOURCE` + `LOGTO_WEB_REQUIRED_SCOPES` | Users holding **every** listed permission |
+
+Two kinds of scope are involved, and they do different jobs:
+
+- **OIDC scopes** (`LOGTO_WEB_OIDC_SCOPES`) control which claims about the user appear in the ID token, such as `email` and `name`. They don't grant any access.
+- **Resource scopes** (`LOGTO_WEB_RESOURCE_SCOPES`, `LOGTO_WEB_REQUIRED_SCOPES`) are permissions on an API resource, granted to users through Logto roles. They appear in the access token.
+
+Logto only puts a permission in the access token when the sign-in request asks for it by name. The package therefore requests the union of all three variables, so nothing needs to be listed twice.
+
+The check only runs during the callback. Changing a user's roles in Logto takes effect at their next sign-in; an existing Laravel session keeps working until it ends.
+
+#### 1. Anyone who can sign in (default)
+
+Without `LOGTO_WEB_RESOURCE`, `LogtoWebClient::requiresResource()` returns false and `WebAuthController::withApiScope()` never runs. The callback uses only the ID token: no access token is requested and no scopes are checked. Every Logto user who can sign in to the Traditional Web app gets a Laravel session, and is provisioned on their first sign-in.
+
+```dotenv
+LOGTO_WEB_ROUTES=true
+LOGTO_WEB_APP_ID=your-traditional-web-app-id
+LOGTO_WEB_APP_SECRET=your-app-secret
+```
+
+To restrict access at this level, either limit who can sign in through Logto's sign-in experience, or gate on your own data after sign-in:
+
+```php
+// app/Providers/AppServiceProvider.php, in boot()
+Gate::define('access-admin', fn (User $user) => $user->is_admin);
+
+// routes/web.php
+Route::middleware(['auth', 'can:access-admin'])->group(function () {
+    Route::get('/admin', AdminController::class);
+});
+```
+
+The package's `Gate::before` hook returns `null` for abilities the user has no OAuth scope for, so your own gates still run.
+
+#### 2. Require any of a set of permissions
+
+Set `LOGTO_WEB_RESOURCE` to an API resource defined in Logto, and list the permissions to request in `LOGTO_WEB_RESOURCE_SCOPES`. The authorization request then includes a `resource` parameter and those permissions, Logto returns a JWT access token for that resource alongside the ID token, and `withApiScope()`:
+
+1. Validates the access token with the resource as the audience.
+2. Requires its `sub` to match the ID token's `sub`.
+3. Refuses sign-in when its `scope` is empty, meaning the user holds none of the requested permissions.
+
+In Logto, permissions are granted through roles, so this is how roles control who can sign in.
+
+```dotenv
+LOGTO_WEB_ROUTES=true
+LOGTO_WEB_APP_ID=your-traditional-web-app-id
+LOGTO_WEB_APP_SECRET=your-app-secret
+
+LOGTO_WEB_RESOURCE=https://admin.example.com
+LOGTO_WEB_RESOURCE_SCOPES="admin:viewer admin:editor"
+```
+
+Here a user with either `admin:viewer` or `admin:editor` gets in. That suits apps where several roles should have access, each granting a different permission.
+
+In the Logto console:
+
+1. Under **API resources**, create a resource whose identifier matches `LOGTO_WEB_RESOURCE`.
+2. Add the permissions to it, for example `admin:viewer` and `admin:editor`.
+3. Under **Roles**, create roles with those permissions and assign them to the users who should get in.
+
+A user without a matching role signs in to Logto successfully, but the callback throws a `SignInException` ("You do not have access to this application") and no Laravel session is created.
+
+#### 3. Require specific permissions
+
+Level 2 accepts *any* of the listed permissions. To require particular ones, list them in `LOGTO_WEB_REQUIRED_SCOPES` (space-delimited). The user must hold every one, matched exactly, and may hold others too. Required scopes are requested automatically, so they don't need repeating in `LOGTO_WEB_RESOURCE_SCOPES`:
+
+```dotenv
+LOGTO_WEB_ROUTES=true
+LOGTO_WEB_APP_ID=your-traditional-web-app-id
+LOGTO_WEB_APP_SECRET=your-app-secret
+
+LOGTO_WEB_RESOURCE=https://admin.example.com
+LOGTO_WEB_REQUIRED_SCOPES="admin:access orders:admin"
+```
+
+Here a user whose roles grant only `admin:access` is refused. One who holds both `admin:access` and `orders:admin` gets in.
+
+The two lists can be combined. With the settings below, every user must hold `admin:access`, and `orders:admin` is also requested so it reaches the user model for those who have it:
+
+```dotenv
+LOGTO_WEB_RESOURCE=https://admin.example.com
+LOGTO_WEB_RESOURCE_SCOPES="orders:admin"
+LOGTO_WEB_REQUIRED_SCOPES="admin:access"
+```
+
+The request sent to Logto is then `scope=openid profile email orders:admin admin:access`.
+
+At levels 2 and 3 the access token's scopes are set on the user (when the model is `OAuthScopable`) for the callback request only. They are not stored in the session, so `can:<scope>` won't see them on later page requests. To authorize individual pages by permission, use your own gates as in level 1.
 
 ---
 

@@ -121,18 +121,49 @@ class LogtoServiceProvider extends ServiceProvider
                 throw new RuntimeException('Logto web app id/secret are not configured');
             }
 
-            if (! empty($config['required-scopes']) && empty($config['resource'])) {
-                throw new RuntimeException('Logto web required scopes need a resource (LOGTO_WEB_RESOURCE)');
+            $resource       = ((string) $config['resource']) ?: null;
+            $resourceScopes = self::scopeList($config['resource-scopes']);
+            $requiredScopes = self::scopeList($config['required-scopes']);
+
+            // Resource scopes are permissions on the resource, so they mean nothing without one.
+            if ($resource === null && ($resourceScopes !== [] || $requiredScopes !== [])) {
+                throw new RuntimeException(
+                    'Logto web resource scopes need a resource: set LOGTO_WEB_RESOURCE, or clear LOGTO_WEB_RESOURCE_SCOPES and LOGTO_WEB_REQUIRED_SCOPES'
+                );
+            }
+
+            // Logto only issues permissions that are requested by name, so with no scopes requested the
+            // access token's scope would always be empty and every sign-in refused.
+            if ($resource !== null && $resourceScopes === [] && $requiredScopes === []) {
+                throw new RuntimeException(
+                    'Logto web resource needs scopes to request: set LOGTO_WEB_RESOURCE_SCOPES and/or LOGTO_WEB_REQUIRED_SCOPES'
+                );
             }
 
             return new LogtoWebClient(
                 discovery: $app->make(OidcDiscoveryService::class),
                 appId: $config['app-id'],
                 appSecret: $config['app-secret'],
-                scopes: $config['scopes'],
-                resource: $config['resource'] ?: null,
+                oidcScopes: self::scopeList($config['oidc-scopes']),
+                resource: $resource,
+                resourceScopes: $resourceScopes,
+                requiredScopes: $requiredScopes,
             );
         });
+    }
+
+    /**
+     * Split a space-delimited scope string from config, dropping empty entries and duplicates.
+     *
+     * @return list<string>
+     */
+    private static function scopeList(mixed $scopes): array
+    {
+        $parts    = explode(' ', (string) $scopes);
+        $nonEmpty = array_filter($parts);         // Drops blanks from repeated spaces or an unset value
+        $unique   = array_unique($nonEmpty);
+
+        return array_values($unique);             // Re-index so the result is a list
     }
 
     /**

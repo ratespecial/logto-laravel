@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ratespecial\Logto\Services;
 
+use Firebase\JWT\JWT;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Uri;
 use Ratespecial\Logto\Exceptions\OidcDiscoveryException;
 use Ratespecial\Logto\Exceptions\SignInException;
 use Throwable;
@@ -15,13 +17,50 @@ use Throwable;
  */
 class LogtoWebClient
 {
+    /**
+     * See the "Scopes and access control" comment in config/logto.php for how these relate.
+     *
+     * @param  list<string>  $oidcScopes  Control which user claims the ID token carries. Grant no access.
+     * @param  string|null  $resource  API resource to also request an access token for. Null for ID token only.
+     * @param  list<string>  $resourceScopes  Permissions on the resource to request; holding any one is enough.
+     * @param  list<string>  $requiredScopes  Permissions on the resource the user must all hold. Also requested.
+     */
     public function __construct(
         private readonly OidcDiscoveryService $discovery,
         private readonly string $appId,
         private readonly string $appSecret,
-        private readonly string $scopes,
+        private readonly array $oidcScopes,
         private readonly ?string $resource = null,
+        private readonly array $resourceScopes = [],
+        private readonly array $requiredScopes = [],
     ) {}
+
+    /**
+     * The `scope` parameter for the authorization request.
+     *
+     * Logto only puts a permission in the access token when it is requested by name, so the resource
+     * scopes, required ones included, are sent alongside the OIDC scopes.
+     */
+    public function requestedScopes(): string
+    {
+        $scopes = $this->oidcScopes;
+
+        if ($this->requiresResource()) {
+            $scopes = [...$scopes, ...$this->resourceScopes, ...$this->requiredScopes];
+        }
+
+        return implode(' ', array_unique($scopes));
+    }
+
+    /**
+     * Permissions on the resource the user must all hold for sign-in to succeed.
+     *
+     * @return list<string>
+     */
+    public function requiredScopes(): array
+    {
+        return $this->requiredScopes;
+    }
 
     /**
      * @throws OidcDiscoveryException
@@ -35,18 +74,18 @@ class LogtoWebClient
             'client_id'             => $this->appId,
             'redirect_uri'          => $redirectUri,
             'response_type'         => 'code',
-            'scope'                 => $this->scopes,
+            'scope'                 => $this->requestedScopes(),
             'state'                 => $state,
             'nonce'                 => $nonce,
             'code_challenge'        => self::codeChallenge($codeVerifier),
             'code_challenge_method' => 'S256',
         ];
 
-        if ($this->resource !== null && $this->resource !== '') {
+        if ($this->requiresResource()) {
             $query['resource'] = $this->resource;
         }
 
-        return $endpoint . (str_contains($endpoint, '?') ? '&' : '?') . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        return Uri::of($endpoint)->withQuery($query)->value();
     }
 
     /**
@@ -93,7 +132,8 @@ class LogtoWebClient
     public function validateIdToken(string $idToken, string $nonce): array
     {
         try {
-            $claims = (new LogtoTokenValidator($this->discovery, $this->appId))->validate($idToken);
+            $logtoTokenValidator = new LogtoTokenValidator($this->discovery, $this->appId);
+            $claims              = $logtoTokenValidator->validate($idToken);
         } catch (OidcDiscoveryException $ex) {
             throw $ex;
         } catch (Throwable $ex) {
@@ -118,7 +158,9 @@ class LogtoWebClient
     public function validateAccessToken(string $accessToken): array
     {
         try {
-            return (new LogtoTokenValidator($this->discovery, (string) $this->resource))->validate($accessToken);
+            $logtoTokenValidator = new LogtoTokenValidator($this->discovery, (string) $this->resource);
+
+            return $logtoTokenValidator->validate($accessToken);
         } catch (OidcDiscoveryException $ex) {
             throw $ex;
         } catch (Throwable $ex) {
@@ -143,14 +185,19 @@ class LogtoWebClient
             return null;
         }
 
-        return $endpoint . (str_contains($endpoint, '?') ? '&' : '?') . http_build_query([
-            'client_id'                => $this->appId,
-            'post_logout_redirect_uri' => $postLogoutRedirectUri,
-        ], '', '&', PHP_QUERY_RFC3986);
+        return Uri::of($endpoint)
+            ->withQuery([
+                'client_id'                => $this->appId,
+                'post_logout_redirect_uri' => $postLogoutRedirectUri,
+            ])
+            ->value();
     }
 
+    /**
+     * PKCE S256 code challenge (RFC 7636 §4.2): BASE64URL(SHA256(verifier)), without padding.
+     */
     public static function codeChallenge(string $codeVerifier): string
     {
-        return rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+        return JWT::urlsafeB64Encode(hash('sha256', $codeVerifier, binary: true));
     }
 }

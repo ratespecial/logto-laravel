@@ -89,20 +89,43 @@ return [
         // Comma-delimited middleware for the routes.  Must include sessions.
         'middleware' => env('LOGTO_WEB_MIDDLEWARE', 'web'),
 
-        // Space-delimited scopes to request.
-        'scopes' => env('LOGTO_WEB_SCOPES', 'openid profile email'),
-
         /*
-         * Optional API resource to request an access token for.  When set, the user must hold at least one
-         * scope on it or sign-in is refused, letting Logto roles gate access.  The token's scopes are set
-         * on the user for this request only.
+         * Scopes and access control
+         * -------------------------
+         * Two kinds of scope go into the sign-in request's `scope` parameter, and they do different jobs:
+         *
+         *   - OIDC scopes (`oidc-scopes`) control which claims about the user appear in the ID token.
+         *     They don't grant any access.
+         *   - Resource scopes (`resource-scopes`, `required-scopes`) are permissions on an API resource,
+         *     granted to users through Logto roles.  Logto puts them in the access token, not the ID token.
+         *
+         * Logto only includes a permission in the access token if it was requested by name, so every
+         * permission that is checked must be requested.  The package sends the union of `oidc-scopes`,
+         * `resource-scopes` and `required-scopes`, so nothing has to be listed twice.
+         *
+         * Access levels:
+         *   1. No `resource`: anyone who can sign in to the Logto app gets a session.  No access token is
+         *      requested and the resource scopes must be empty.
+         *   2. `resource` + `resource-scopes`: the user must hold at least one of `resource-scopes`.
+         *   3. `resource` + `required-scopes`: the user must hold every one of `required-scopes`.
+         *      Can be combined with 2, meaning "all of these, plus any of those that they have".
+         *
+         * Setting `resource` with neither scope list, or a scope list without `resource`, is a configuration
+         * error, because no user could ever pass.  The granted scopes are set on the user (if `OAuthScopable`)
+         * for the callback request only; they are not stored in the session.
          */
+
+        // Space-delimited OIDC scopes.  `openid` is required; `profile` and `email` add those claims to the ID token.
+        // You rarely need to change this.
+        'oidc-scopes' => env('LOGTO_WEB_OIDC_SCOPES', 'openid profile email'),
+
+        // Optional API resource indicator.  When set, Logto also issues an access token for this resource.
         'resource' => env('LOGTO_WEB_RESOURCE'),
 
-        /*
-         * Optional space-delimited scopes the user must hold on the resource above, all of them, or sign-in is
-         * refused.  Empty means any scope will do.  Requires a resource.
-         */
+        // Optional space-delimited permissions on `resource` to request.  Holding any one of them is enough (level 2).
+        'resource-scopes' => env('LOGTO_WEB_RESOURCE_SCOPES', ''),
+
+        // Optional space-delimited permissions on `resource` the user must all hold (level 3).  Requested automatically.
         'required-scopes' => env('LOGTO_WEB_REQUIRED_SCOPES', ''),
 
         // Where to go after signing in when there is no intended URL, and after signing out.  Paths or absolute URLs.
