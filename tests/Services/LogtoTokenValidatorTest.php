@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Ratespecial\Logto\Services;
 
+use Firebase\JWT\BeforeValidException;
+use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\SignatureInvalidException;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -185,6 +187,72 @@ class LogtoTokenValidatorTest extends TestCase
         (new LogtoTokenValidator($discovery, self::AUDIENCE))->validate($token);
     }
 
+    public function testToleratesTokenIssuedSlightlyInTheFuture(): void
+    {
+        // Logto's clock a little ahead of ours
+        $token = $this->signToken(['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'sub' => 'user-123', 'iat' => time() + 30]);
+
+        $this->assertSame('user-123', $this->makeValidator()->validate($token)['sub']);
+    }
+
+    public function testRejectsTokenIssuedBeyondTheClockSkew(): void
+    {
+        $token = $this->signToken([
+            'iss' => self::ISSUER,
+            'aud' => self::AUDIENCE,
+            'iat' => time() + LogtoTokenValidator::CLOCK_SKEW_SECONDS + 60,
+        ]);
+
+        $this->expectException(BeforeValidException::class);
+        $this->makeValidator()->validate($token);
+    }
+
+    public function testToleratesTokenThatExpiredWithinTheClockSkew(): void
+    {
+        $token = $this->signToken(['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'sub' => 'user-123', 'exp' => time() - 30]);
+
+        $this->assertSame('user-123', $this->makeValidator()->validate($token)['sub']);
+    }
+
+    public function testRejectsTokenExpiredBeyondTheClockSkew(): void
+    {
+        $token = $this->signToken([
+            'iss' => self::ISSUER,
+            'aud' => self::AUDIENCE,
+            'exp' => time() - LogtoTokenValidator::CLOCK_SKEW_SECONDS - 60,
+        ]);
+
+        $this->expectException(ExpiredException::class);
+        $this->makeValidator()->validate($token);
+    }
+
+    public function testRestoresTheGlobalLeewayAfterDecoding(): void
+    {
+        JWT::$leeway = 7;
+
+        try {
+            $this->makeValidator()->validate($this->signToken(['iss' => self::ISSUER, 'aud' => self::AUDIENCE]));
+
+            $this->assertSame(7, self::globalLeeway());
+        } finally {
+            JWT::$leeway = 0;
+        }
+    }
+
+    public function testRestoresTheGlobalLeewayWhenDecodingFails(): void
+    {
+        JWT::$leeway = 7;
+
+        try {
+            $this->makeValidator()->validate($this->signToken(['iss' => self::ISSUER, 'aud' => self::AUDIENCE, 'exp' => time() - 3600]));
+            $this->fail('Expired token was accepted');
+        } catch (ExpiredException) {
+            $this->assertSame(7, self::globalLeeway());
+        } finally {
+            JWT::$leeway = 0;
+        }
+    }
+
     public function testIsJwtRecognisesThreeSegmentTokens(): void
     {
         $this->assertTrue(LogtoTokenValidator::isJwt('header.payload.signature'));
@@ -198,6 +266,14 @@ class LogtoTokenValidatorTest extends TestCase
         $this->expectExceptionMessage('Not a JWT');
 
         $this->makeValidator()->validate('abc123plaintextapitoken');
+    }
+
+    /**
+     * Read through a call so static analysis doesn't assume the property is unchanged by validate().
+     */
+    private static function globalLeeway(): int
+    {
+        return JWT::$leeway;
     }
 
     private function makeValidator(): LogtoTokenValidator

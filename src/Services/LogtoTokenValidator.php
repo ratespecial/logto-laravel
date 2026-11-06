@@ -13,6 +13,12 @@ use Throwable;
 
 class LogtoTokenValidator
 {
+    /**
+     * @var int Seconds of clock difference tolerated between Logto and this server when checking `iat`, `nbf`
+     *          and `exp`.  Without it a server a second behind Logto rejects fresh tokens as issued in the future.
+     */
+    public const int CLOCK_SKEW_SECONDS = 60;
+
     public function __construct(
         private readonly OidcDiscoveryService $discovery,
         private readonly string $audience,
@@ -41,7 +47,14 @@ class LogtoTokenValidator
             $keys = JWK::parseKeySet($this->discovery->refreshJwks());
         }
 
-        $payload = (array) JWT::decode($token, $keys);
+        // JWT::$leeway is a global static; set it for this decode only so other JWT users in the app are unaffected
+        $previousLeeway = JWT::$leeway;
+        JWT::$leeway    = self::CLOCK_SKEW_SECONDS;
+        try {
+            $payload = (array) JWT::decode($token, $keys);
+        } finally {
+            JWT::$leeway = $previousLeeway;
+        }
 
         if (($payload['iss'] ?? null) !== $this->discovery->get()->issuer) {
             throw new TokenValidationException('Invalid token issuer');

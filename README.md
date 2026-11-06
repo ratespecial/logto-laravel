@@ -379,7 +379,7 @@ All three routes are handled by `Ratespecial\Logto\Controllers\WebAuthController
 | Route | Name | Controller method | Purpose |
 | --- | --- | --- | --- |
 | `GET /{prefix}/sign-in` | `logto.sign-in` | `signIn()` | Stores state, nonce and PKCE verifier in the session and redirects to Logto. |
-| `GET /{prefix}/callback` | `logto.callback` | `callback()` | Verifies state, exchanges the code (client secret via HTTP Basic), validates the ID token (signature, `iss`, `aud` = app ID, `exp`, `nonce`), optionally [checks API resource scopes](#limiting-who-can-sign-in), logs the user in, regenerates the session and redirects to the intended URL. |
+| `GET /{prefix}/callback` | `logto.callback` | `callback()` | Verifies state, exchanges the code (client secret via HTTP Basic), validates the ID token (signature, `iss`, `aud` = app ID, `exp`, `nonce`; `iat`/`nbf`/`exp` allow 60 s of clock skew, as for API tokens), optionally [checks API resource scopes](#limiting-who-can-sign-in), logs the user in, regenerates the session and redirects to the intended URL. |
 | `POST /{prefix}/sign-out` | `logto.sign-out` | `signOut()` | Logs out, invalidates the session and redirects to Logto's `end_session_endpoint` (falling back to a local redirect). |
 
 ```mermaid
